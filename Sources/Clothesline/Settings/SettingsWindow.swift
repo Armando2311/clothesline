@@ -203,6 +203,12 @@ private struct AppearanceSettings: View {
 
     var body: some View {
         Form {
+            Section("Layout") {
+                Picker("Appearance", selection: $model.settings.appearanceStyle) {
+                    ForEach(AppearanceStyle.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                Text("Compact keeps the rope and uses upright cards with less decoration.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Sky") {
                 Picker("Theme", selection: $model.settings.theme) {
                     ForEach(ThemeChoice.allCases, id: \.self) { choice in

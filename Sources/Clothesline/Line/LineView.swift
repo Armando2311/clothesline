@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Combine
 import QuickLookUI
 import ClotheslineCore
@@ -22,6 +23,8 @@ protocol LineViewDelegate: AnyObject {
 final class LineView: NSView {
     weak var delegate: LineViewDelegate?
     let model: AppModel
+    lazy var workflow = WorkflowActions(model: model, view: self)
+    private var controls: NSHostingView<LineControls>?
     lazy var actions = ItemActions(model: model, view: self)
 
     // Layers
@@ -47,7 +50,10 @@ final class LineView: NSView {
     private var renderedLineID: UUID?
     private var scrollOffset: Double = 0
     private var dropIndex: Int?
-    private(set) var selection: Set<UUID> = [] { didSet { updateSelectionAppearance() } }
+    private(set) var selection: Set<UUID> {
+        get { model.selectedIDs }
+        set { model.selectedIDs = newValue; updateSelectionAppearance() }
+    }
     private var anchorID: UUID?
     private var hoveredID: UUID? { didSet { hoverChanged(from: oldValue) } }
     private let hoverCaptionDelay = Delayed()
@@ -72,6 +78,13 @@ final class LineView: NSView {
         layerContentsRedrawPolicy = .never
         layer?.masksToBounds = false
         setupLayers()
+        let controls = NSHostingView(rootView: LineControls(model: model) { [weak self] action in self?.workflow.perform(action) })
+        self.controls = controls
+        addSubview(controls)
+        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged() }.store(in: &cancellables)
+        model.$recognizedText.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged() }.store(in: &cancellables)
+        model.$selectedIDs.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelectionAppearance() }.store(in: &cancellables)
+        model.$settings.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme(force: true) }.store(in: &cancellables)
         registerForDraggedTypes(PasteboardImporter.acceptedTypes)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Clothesline")
@@ -149,6 +162,9 @@ final class LineView: NSView {
         let resolved = Theme.resolve(model.settings.theme, appearance: effectiveAppearance)
         guard force || resolved != theme else { return }
         theme = resolved
+        let compact = model.settings.appearanceStyle == .compact
+        sky.isHidden = compact
+        layer?.backgroundColor = compact ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         ropeBase.strokeColor = theme.rope.cgColor
@@ -293,13 +309,13 @@ final class LineView: NSView {
     }
 
     private func updateAmbient() {
-        sky.setAmbientRunning(isOnScreen && model.settings.ambientEffects && !Motion.reduced)
+        sky.setAmbientRunning(isOnScreen && model.settings.appearanceStyle != .compact && model.settings.ambientEffects && !Motion.reduced)
     }
 
     /// A barely perceptible sway while the line is open. Implemented as
     /// render-server animations, so it costs no app CPU, and removed when hidden.
     func updateBreeze() {
-        let on = isOnScreen && model.settings.gentleBreeze && !Motion.reduced
+        let on = isOnScreen && model.settings.appearanceStyle != .compact && model.settings.gentleBreeze && !Motion.reduced
         for (id, l) in itemLayers {
             l.removeAnimation(forKey: "breeze")
             guard on, let item = model.board.item(id) else { continue }
@@ -323,7 +339,7 @@ final class LineView: NSView {
         let board = model.board
         let lineChanged = renderedLineID != board.activeLineID
         renderedLineID = board.activeLineID
-        let newIDs = board.activeItems.map(\.id)
+        let newIDs = model.visibleItems.map(\.id)
         let oldSet = Set(orderedIDs), newSet = Set(newIDs)
         let removed = orderedIDs.filter { !newSet.contains($0) }
         let added = newIDs.filter { !oldSet.contains($0) }
@@ -424,7 +440,8 @@ final class LineView: NSView {
                 icon = NSWorkspace.shared.icon(forFile: url.path)
             }
         }
-        let card = Artwork.card(.init(item: item, thumbnail: thumb, icon: icon, availability: avail, theme: theme, scale: scale))
+        let input = Artwork.CardInput(item: item, thumbnail: thumb, icon: icon, availability: avail, theme: theme, scale: scale)
+        let card = model.settings.appearanceStyle == .compact ? Artwork.compactCard(input) : Artwork.card(input)
         let pin = Artwork.clothespin(theme: theme, painted: item.pinned, scale: scale)
         l.configure(card: card, pin: pin, theme: theme, scale: scale)
         l.isSelected = selection.contains(id)
@@ -436,7 +453,7 @@ final class LineView: NSView {
     func relayout(animated: Bool) {
         let width = Double(bounds.width)
         guard width > 0 else { return }
-        geometry = LineGeometry(width: width, centerHookX: notchCenterX)
+        geometry = LineGeometry(width: width, centerHookX: notchCenterX, sagScale: model.settings.appearanceStyle == .compact ? 0.15 : 1)
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         lineLayer.frame = bounds
@@ -452,7 +469,7 @@ final class LineView: NSView {
         let items = orderedIDs.compactMap { model.board.item($0) }
         var jitters = items.map { $0.jitter(1) }
         if let dropIndex { jitters.insert(0, at: min(dropIndex, jitters.count)) }
-        layout = LineLayout(geometry: geometry, itemWidth: Self.itemWidth, jitters: jitters, scroll: scrollOffset, reduceMotion: Motion.reduced)
+        layout = LineLayout(geometry: geometry, itemWidth: model.settings.appearanceStyle == .compact ? 138 : Self.itemWidth, jitters: jitters, scroll: scrollOffset, reduceMotion: Motion.reduced)
         scrollOffset = min(scrollOffset, layout.overflow)
 
         for (i, item) in items.enumerated() {
@@ -461,7 +478,7 @@ final class LineView: NSView {
             guard slotIndex < layout.slots.count else { continue }
             let slot = layout.slots[slotIndex]
             let newPos = CGPoint(x: slot.x, y: slot.y)
-            let newTransform = CATransform3DMakeRotation(CGFloat(slot.rotation), 0, 0, 1)
+            let newTransform = CATransform3DMakeRotation(model.settings.appearanceStyle == .compact ? 0 : CGFloat(slot.rotation), 0, 0, 1)
             l.zPosition = CGFloat(i)
             let isFresh = freshLayers.remove(item.id) != nil
             if animated && !isFresh && l.animation(forKey: "clipOn") == nil {
@@ -482,6 +499,7 @@ final class LineView: NSView {
             l.transform = newTransform
             l.opacity = slot.visible ? (draggingIDs.contains(item.id) ? 0.35 : 1) : 0
         }
+        controls?.frame = CGRect(x: 10, y: bounds.height - 46, width: max(0,bounds.width-20), height: 40)
         positionLineName()
         positionHint()
         updateAccessibilityChildren()
@@ -590,9 +608,8 @@ final class LineView: NSView {
     // MARK: - Line name & empty state
 
     private func updateLineName() {
-        let showName = model.board.lines.count > 1
-        lineNameLayer.isHidden = !showName
-        lineNameLayer.string = showName ? "\(model.board.activeLine.name) ▾" : ""
+        lineNameLayer.isHidden = true
+        lineNameLayer.string = ""
         positionLineName()
     }
 
@@ -867,6 +884,7 @@ final class LineView: NSView {
         case 51, 117: actions.removeFromLine(selectedItems)           // ⌫ ⌦
         case 36, 76: actions.open(selectedItems)                      // ↩
         case 53:                                                      // ⎋
+            if model.isSearching { model.query = ""; return }
             if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
                 QLPreviewPanel.shared().orderOut(nil)
             } else if !selection.isEmpty {
@@ -894,6 +912,7 @@ final class LineView: NSView {
         let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
         let shift = event.modifierFlags.contains(.shift)
         switch chars {
+        case "f": focusSearch(); return true
         case "a": selection = Set(orderedIDs); return true
         case "c": if !selection.isEmpty { _ = DragWriters.copyToPasteboard(selectedItems, model: model) }; return true
         case "v": PasteboardImporter.importContents(of: .general, into: model, source: .clipboard); return true
@@ -932,6 +951,15 @@ final class LineView: NSView {
         anchorID = id
         if let l = itemLayers[id] { swing(l, impulse: CGFloat(delta) * 0.04) }
         scrollToReveal(id)
+    }
+
+    func focusSearch() {
+        delegate?.lineViewRequestsKeyFocus(self)
+        NotificationCenter.default.post(name: .clotheslineSearch, object: nil)
+    }
+    func scrollPage(_ direction: Double) {
+        scrollOffset = min(max(0, scrollOffset + direction * max(100,geometry.usableLength * 0.7)),layout.overflow)
+        relayout(animated: false)
     }
 
     private func scrollToReveal(_ id: UUID) {
@@ -1017,6 +1045,7 @@ final class LineView: NSView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         delegate?.lineViewDidInteract(self)
+        if model.isSearching && isInternal(sender) { return [] }
         if !isInternal(sender) {
             guard PasteboardImporter.canImport(sender.draggingPasteboard) else { return [] }
         }
@@ -1025,6 +1054,7 @@ final class LineView: NSView {
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if model.isSearching && isInternal(sender) { return [] }
         if !isInternal(sender) && !PasteboardImporter.canImport(sender.draggingPasteboard) { return [] }
         updateDropIndex(insertionIndex(for: sender))
         return isInternal(sender) ? .move : .copy
@@ -1041,15 +1071,16 @@ final class LineView: NSView {
         let index = dropIndex ?? orderedIDs.count
         updateDropIndex(nil, animated: false)
         if isInternal(sender) {
+            guard !model.isSearching else { return false }
             internalDropHappened = true
             let moving = Set(draggingIDs)
             let before = orderedIDs.prefix(index).filter { !moving.contains($0) }.count
             model.move(moving, toPosition: before)
             return true
         }
-        let ids = PasteboardImporter.importContents(of: sender.draggingPasteboard, into: model, source: .drop, at: index)
+        let ids = PasteboardImporter.importContents(of: sender.draggingPasteboard, into: model, source: .drop, at: model.isSearching ? nil : index)
         delegate?.lineViewDidAcceptDrop(self)
-        if !ids.isEmpty { selection = Set(ids) }
+        if !ids.isEmpty { model.query = ""; selection = Set(ids) }
         return true
     }
 
@@ -1076,7 +1107,7 @@ final class LineView: NSView {
             e.setAccessibilitySelected(selection.contains(id))
             return e
         }
-        setAccessibilityChildren(accessibilityItems)
+        setAccessibilityChildren(accessibilityItems + (controls.map { [$0 as Any] } ?? []))
     }
 
     fileprivate func accessibilityPress(_ id: UUID) {

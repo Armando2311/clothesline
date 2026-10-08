@@ -29,7 +29,7 @@ final class PanelController: NSObject, LineViewDelegate {
     private var mouseInside = false
     private var currentScreen: NSScreen?
 
-    static let panelHeight: CGFloat = 252
+    static let panelHeight: CGFloat = 292
 
     init(model: AppModel) {
         self.model = model
@@ -139,11 +139,13 @@ final class PanelController: NSObject, LineViewDelegate {
         let safeTop: Double
         if #available(macOS 12.0, *) { safeTop = Double(screen.safeAreaInsets.top) } else { safeTop = 0 }
         let placement = PanelPlacement(screenFrame: screen.frame, visibleFrame: screen.visibleFrame, safeAreaTop: safeTop,
-                                       notchRect: notch, height: Double(Self.panelHeight))
+                                       notchRect: notch, height: model.settings.appearanceStyle.panelHeight)
         panel.setFrame(placement.frame, display: false)
         lineView.frame = NSRect(origin: .zero, size: placement.frame.size)
         lineView.configure(notchCenterX: placement.notchCenterX)
     }
+
+    func refreshLayout() { if isVisible { place(on: targetScreen()); lineView.applyTheme(force: true) } }
 
     @objc private func screensChanged() {
         guard isVisible else { currentScreen = nil; return }

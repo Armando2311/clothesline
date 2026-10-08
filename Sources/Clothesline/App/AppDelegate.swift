@@ -43,7 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         watcher.onScreenshot = { [weak self] url in self?.model.screenshotDetected(url) }
         watcher.onStatusChange = { [weak self] status in self?.model.screenshotStatus = status }
-        applyWatcherConfig()
+        if !UserDefaults.standard.bool(forKey: "didShowWelcome") && !UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") {
+            WelcomeWindow.shared.show { [weak self] in self?.applyWatcherConfig(); self?.panel.show(.explicit) }
+        } else { applyWatcherConfig() }
 
         updateStatusItem()
 
@@ -58,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let firstLaunchKey = "didShowWelcome"
         if !UserDefaults.standard.bool(forKey: firstLaunchKey) {
             UserDefaults.standard.set(true, forKey: firstLaunchKey)
-            after(0.6) { [weak self] in self?.panel.show(.explicit) }
+            if UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") { after(0.6) { [weak self] in self?.panel.show(.explicit) } }
         }
     }
 
@@ -81,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if s.collectScreenshots != old.collectScreenshots || s.includeScreenRecordings != old.includeScreenRecordings
             || s.customScreenshotFolder != old.customScreenshotFolder { applyWatcherConfig() }
         if s.showMenuBarIcon != old.showMenuBarIcon { updateStatusItem() }
+        if s.appearanceStyle != old.appearanceStyle { panel.refreshLayout() }
         if s.theme != old.theme { panel.lineView.applyTheme(force: true) }
         if s.gentleBreeze != old.gentleBreeze || s.ambientEffects != old.ambientEffects {
             panel.lineView.applyTheme(force: true)
@@ -191,6 +194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(info)
             menu.addItem(.separator())
         }
+        menu.addItem(NSMenuItem(title: "Browse Collection…", action: #selector(menuBrowse), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Welcome Guide…", action: #selector(menuWelcome), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Quit Clothesline", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) {
@@ -204,5 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuAddFiles() { panel.lineView.actions.addFiles() }
     @objc private func menuClear() { model.clearActiveLine() }
     @objc private func menuUndo() { model.undoLastRemoval() }
+    @objc private func menuBrowse() { panel.lineView.workflow.browse() }
+    @objc private func menuWelcome() { WelcomeWindow.shared.show() }
     @objc private func menuSettings() { SettingsWindowController.shared.show(model: model) }
 }

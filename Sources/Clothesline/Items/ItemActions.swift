@@ -35,6 +35,13 @@ final class ItemActions: NSObject {
         if !fileItems.isEmpty {
             add(menu, "Show in Finder", #selector(revealSelected), key: "r", enabled: !reachable.isEmpty)
         }
+        add(menu, "Share…", #selector(shareSelected))
+        add(menu, "Export with Recipe…", #selector(exportSelected))
+        if let single {
+            add(menu, "Rename Label…", #selector(renameSelected))
+            if single.kind == .text { add(menu, "Edit Note…", #selector(editSelected)) }
+            if [.image, .screenshot].contains(single.kind) { add(menu, "Prepare Image…", #selector(prepareSelected), enabled: !reachable.isEmpty) }
+        }
         add(menu, "Copy", #selector(copySelected), key: "c")
         menu.addItem(.separator())
 
@@ -133,6 +140,11 @@ final class ItemActions: NSObject {
     // MARK: - Menu actions
 
     @objc private func quickLook() { view?.toggleQuickLook() }
+    @objc private func shareSelected() { view?.workflow.share() }
+    @objc private func exportSelected() { view?.workflow.export() }
+    @objc private func renameSelected() { if let item = selected.first { view?.workflow.alias(item) } }
+    @objc private func editSelected() { if let item = selected.first { view?.workflow.note(item) } }
+    @objc private func prepareSelected() { if let item = selected.first { view?.workflow.prepare(item) } }
     @objc private func openSelected() { open(selected) }
     @objc private func revealSelected() { reveal(selected) }
     @objc private func copySelected() { _ = DragWriters.copyToPasteboard(selected, model: model) }
@@ -166,7 +178,7 @@ final class ItemActions: NSObject {
             case .link:
                 if let link = item.link, let url = URL(string: link) { NSWorkspace.shared.open(url) }
             case .text:
-                if let url = previewURL(for: item) { NSWorkspace.shared.open(url) }
+                view?.workflow.note(item)
             default:
                 if let url = model.url(for: item) { NSWorkspace.shared.open(url) } else { NSSound.beep() }
             }
@@ -341,8 +353,7 @@ final class ItemActions: NSObject {
     }
 
     @objc func newNote() {
-        guard let text = TextPrompt.run(title: "New Note", message: "Write a note to hang on the line.", initial: "", multiline: true) else { return }
-        model.hang(text: text, source: .manual)
+        view?.workflow.note(nil)
     }
 
     @objc private func newLine() {
