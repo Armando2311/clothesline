@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Direct distribution build: not sandboxed, so Clothesline can follow the
+	     macOS screenshot location and reference files anywhere the user drags
+	     them from. See Clothesline-AppStore.entitlements for the sandboxed variant. -->
+</dict>
+</plist>

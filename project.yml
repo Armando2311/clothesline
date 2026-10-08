@@ -1,0 +1,53 @@
+# XcodeGen spec: `brew install xcodegen && xcodegen generate` creates
+# Clothesline.xcodeproj with the same sources as Package.swift.
+name: Clothesline
+options:
+  bundleIdPrefix: app.clothesline
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+targets:
+  ClotheslineCore:
+    type: framework
+    platform: macOS
+    sources: [Sources/ClotheslineCore]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.clothesline.ClotheslineCore
+  Clothesline:
+    type: application
+    platform: macOS
+    sources: [Sources/Clothesline]
+    dependencies:
+      - target: ClotheslineCore
+      - sdk: Carbon.framework
+      - sdk: QuickLookUI.framework
+      - sdk: QuickLookThumbnailing.framework
+      - sdk: ServiceManagement.framework
+    settings:
+      base:
+        INFOPLIST_FILE: Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: app.clothesline.Clothesline
+        CODE_SIGN_ENTITLEMENTS: Resources/Clothesline.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+  ClotheslineCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/ClotheslineCoreTests]
+    dependencies:
+      - target: ClotheslineCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Clothesline:
+    build:
+      targets:
+        Clothesline: all
+    test:
+      targets: [ClotheslineCoreTests]
