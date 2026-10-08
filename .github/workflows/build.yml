@@ -42,7 +42,7 @@ jobs:
           lipo -info build/Clothesline.app/Contents/MacOS/Clothesline
           codesign --verify --deep --strict --verbose=2 build/Clothesline.app
       - name: Launch smoke test
-        run: Scripts/smoke-test.sh build/Clothesline.app
+        run: PREVIEW_BASE64=1 Scripts/smoke-test.sh build/Clothesline.app
       - name: Screenshot end-to-end test
         run: Scripts/e2e-screenshot-test.sh build/Clothesline.app build/preview.png
       - name: XcodeGen project builds
