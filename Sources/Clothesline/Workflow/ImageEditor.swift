@@ -98,9 +98,7 @@ struct ImageEditor: View {
                                 if tool == "Crop" {
                                     let r = rect(a,b)
                                     guard r.width > 0.01, r.height > 0.01 else { _ = history.popLast(); return }
-                                    let old = edits.crop
-                                    edits.crop = CGRect(x: old.minX+r.minX*old.width,y: old.minY+r.minY*old.height,width: r.width*old.width,height: r.height*old.height)
-                                    edits.marks = []
+                                    edits.applyCrop(r)
                                 } else {
                                     let kind: ImageMark.Kind = tool == "Redact" ? .redact : tool == "Number" ? .number : .arrow
                                     edits.marks.append(ImageMark(kind: kind,start: a,end: b,number: edits.marks.filter { $0.kind == .number }.count+1))

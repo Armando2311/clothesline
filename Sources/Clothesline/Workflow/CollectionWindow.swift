@@ -7,7 +7,7 @@ struct CollectionView: View {
     let actions: WorkflowActions
     var body: some View {
         VStack(spacing: 0) {
-            LineControls(model: model, action: actions.perform).padding(8)
+            LineControls(model: model, action: { action, anchor in actions.perform(action, from: anchor) },searchTarget: "collection").padding(8)
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 160),spacing: 14)],spacing: 14) {
                     ForEach(model.visibleItems) { item in
@@ -20,17 +20,7 @@ struct CollectionView: View {
                         .background(model.selectedIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.04))
                         .cornerRadius(10).overlay(RoundedRectangle(cornerRadius: 10).stroke(model.selectedIDs.contains(item.id) ? Color.accentColor : .clear,lineWidth: 2))
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { if item.kind == .text { actions.note(item) } else { actions.view?.actions.open([item]) } }
-                        .onTapGesture { if NSEvent.modifierFlags.contains(.command) { if model.selectedIDs.contains(item.id) { model.selectedIDs.remove(item.id) } else { model.selectedIDs.insert(item.id) } } else { model.selectedIDs = [item.id] } }
-                        .onDrag { if let url = model.url(for: item) { return NSItemProvider(contentsOf: url) ?? NSItemProvider() }; return NSItemProvider(object: (item.text ?? item.link ?? item.title) as NSString) }
-                        .contextMenu {
-                            Button("Rename Label…") { actions.alias(item) }
-                            if item.kind == .text { Button("Edit Note…") { actions.note(item) } }
-                            if [.image,.screenshot].contains(item.kind) { Button("Prepare Image…") { actions.prepare(item) } }
-                            Button(item.pinned ? "Unpin" : "Pin") { model.togglePinned([item.id]) }
-                            Button("Remove from Line") { model.remove([item.id]) }
-                        }
-                        .accessibilityElement(children: .combine).accessibilityLabel("\(item.kind.displayName): \(item.title)")
+                        .overlay(CollectionDragSurface(model: model,item: item,actions: actions))
                     }
                 }.padding(18)
                 if model.visibleItems.isEmpty { Text(model.isSearching ? "No matching items. Try another word." : "Drop files on your line to get started.").foregroundStyle(.secondary).padding(40) }

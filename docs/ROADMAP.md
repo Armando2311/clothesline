@@ -17,6 +17,14 @@
 * Four original themes (+ automatic light/dark), breeze, ambient particles, Reduce Motion support.
 * Settings window, launch at login, menu bar item, VoiceOver labels.
 
+## Workflow upgrade branch
+
+Implemented: visible control bar, Compact mode, expanded collection browser, cross-line
+search with on-device OCR, native sharing, native note editing and labels, image preparation
+with flattened redaction, and Client Handoff / Bug Report / Product Listing recipes.
+
+Public-release distribution work below remains outstanding.
+
 ## Next (before a public release)
 
 1. **Developer ID signing + notarization** pipeline (needs an Apple Developer account — requires your
@@ -30,10 +38,10 @@
 
 ## Later (candidate premium features)
 
-* **Shelf sharing via AirDrop / Share menu** on selected items.
-* **Quick actions** on prints: copy as PNG/JPEG, resize, annotate with Markup (QLPreviewPanel editing).
-* **Text recognition** (Vision, on-device) so screenshot text is searchable and copyable from the line.
-* **Search / filter** typing while the line is open.
+* **Hosted collection sharing** beyond the implemented native Share menu.
+* **Additional preparation actions** beyond the implemented PNG/JPEG output, resize, crop and annotations.
+* **Copy recognized text** as a dedicated action, beyond the implemented searchable OCR.
+* **Richer search filters** for dates, sources and item kinds.
 * **Opt-in clipboard history** with explicit privacy controls (excluded apps, password-manager types,
   auto-expiry) — deliberately left out of v1.
 * **Per-line folders**: optionally mirror a line to a real folder for syncing via iCloud Drive.

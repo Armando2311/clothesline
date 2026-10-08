@@ -63,6 +63,34 @@ with sample items to an image, and builds the XcodeGen project.
 `Clothesline --render-preview out.png` draws the real line view with sample content
 (all four themes plus the empty state) without opening a window.
 
+## Workflow tools
+
+The control bar exposes line switching, search, collection browsing, Preview, Copy,
+Share, Prepare Image and Export. Search with **⌘F** across every line, including note
+contents, URLs and text recognized locally in screenshots and images. OCR starts when
+search is used; new matches appear as recognition completes.
+
+Choose **Settings → Appearance → Compact** for upright cards with less decoration.
+The expanded collection browser supports multiple selection (⌘-click), Quick Look,
+copy-by-default multi-item dragging, editable notes and labels that leave filenames intact.
+
+**Prepare Image** offers cropping, arrows, numbered steps, opaque redaction, undo,
+resize, PNG/JPEG output, and an optional JPEG size limit. Copy, hang or save a flattened
+result; the original is never overwritten. Cropping preserves existing annotations.
+
+**Export** includes three configurable recipes:
+
+* **Client Handoff:** resize and number JPEG copies, collect other attachments, include
+  notes and links in `Report.md`, then create a ZIP or folder.
+* **Bug Report:** preserve attachments and add reproduction steps, expected/actual results,
+  notes and links to a Markdown report. Copy the report after exporting.
+* **Product Listing:** resize, optionally center-crop and number image copies.
+
+Recipe settings and the chosen destination are remembered locally. Exports use new names
+instead of overwriting existing files. A selected folder cannot be exported into itself or
+its descendants. Cancellation discards the staged package. Hosted sharing, sync, billing,
+and automatic clipboard history are not included.
+
 ## Using Clothesline
 
 | | |

@@ -21,7 +21,7 @@ struct RecipeView: View {
             Text("Get your collection ready").font(.title2.bold())
             Picker("Recipe",selection: Binding(get: { options.recipe },set: { recipe in options = load(recipe); result = nil })) {
                 ForEach(ExportRecipe.allCases,id: \.self) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).disabled(busy || resolving)
             ScrollView {
                 VStack(alignment: .leading,spacing: 14) {
                     TextField("Package name",text: $options.packageName).textFieldStyle(.roundedBorder)

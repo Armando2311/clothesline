@@ -13,7 +13,7 @@ final class OCRIndex {
             let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey,.fileSizeKey]))
             next[id] = "\(url.path)|\(date?.contentModificationDate?.timeIntervalSince1970 ?? 0)|\(date?.fileSize ?? 0)"
         }
-        guard next != keys else { return }
+        guard next != keys || task == nil else { return }
         task?.cancel()
         cache = cache.filter { next[$0.key] == keys[$0.key] && next[$0.key] != nil }
         keys = next; changed?(cache)

@@ -5,7 +5,9 @@ import ClotheslineCore
 enum LineAction { case preview, copy, share, prepare, export, browse, note, newLine, previous, next }
 struct LineControls: View {
     @ObservedObject var model: AppModel
-    var action: (LineAction) -> Void
+    var action: (LineAction, NSView?) -> Void
+    @State private var anchor: NSView?
+    var searchTarget = "rope"
     @FocusState private var searching: Bool
     var body: some View {
         HStack(spacing: 8) {
@@ -14,7 +16,7 @@ struct LineControls: View {
             }.labelsHidden().frame(width: 145).help("Switch clothesline")
             icon("New line", "plus", .newLine)
             HStack(spacing: 5) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Button { searching = true } label: { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }.buttonStyle(.plain).keyboardShortcut("f").help("Search (Command–F)").accessibilityLabel("Search")
                 TextField("Search every line", text: $model.query).textFieldStyle(.plain).focused($searching)
                     .onExitCommand { model.query = ""; searching = false }
                 if !model.query.isEmpty { Button { model.query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Clear search") }
@@ -29,15 +31,16 @@ struct LineControls: View {
             icon("Copy", "doc.on.doc", .copy, enabled: !model.selectedItems.isEmpty)
             icon("Share", "square.and.arrow.up", .share, enabled: !model.selectedItems.isEmpty)
             icon("Prepare image", "slider.horizontal.3", .prepare, enabled: model.selectedItems.count == 1 && [.image,.screenshot].contains(model.selectedItems[0].kind))
-            Button("Export…") { action(.export) }.disabled(model.selectedItems.isEmpty)
+            Button("Export…") { action(.export,anchor) }.disabled(model.selectedItems.isEmpty)
             icon("New note", "square.and.pencil", .note)
         }
         .padding(.horizontal,12).padding(.vertical,6)
         .background(.regularMaterial).cornerRadius(10)
-        .onReceive(NotificationCenter.default.publisher(for: .clotheslineSearch)) { _ in searching = true }
+        .background(ControlAnchor { anchor = $0 })
+        .onReceive(NotificationCenter.default.publisher(for: .clotheslineSearch)) { notification in if (notification.userInfo?["target"] as? String ?? "rope") == searchTarget { searching = true } }
     }
     private func icon(_ label: String, _ symbol: String, _ value: LineAction, enabled: Bool = true) -> some View {
-        Button { action(value) } label: { Image(systemName: symbol).frame(width: 18) }
+        Button { action(value,anchor) } label: { Image(systemName: symbol).frame(width: 18) }
             .help(label).accessibilityLabel(label).disabled(!enabled)
     }
 }

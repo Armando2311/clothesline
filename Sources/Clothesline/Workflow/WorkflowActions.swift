@@ -3,24 +3,31 @@ import SwiftUI
 import ClotheslineCore
 
 @MainActor
-final class WorkflowActions {
+final class WorkflowActions: NSObject, NSWindowDelegate {
     let model: AppModel
     weak var view: LineView?
     private var windows: [String: NSWindow] = [:]
     private var sharePicker: NSSharingServicePicker?
-    init(model: AppModel, view: LineView) { self.model = model; self.view = view }
+    init(model: AppModel, view: LineView) { self.model = model; self.view = view; super.init() }
     func present<Content: View>(_ title: String, key: String, size: CGSize, @ViewBuilder content: () -> Content) {
+        if let view { view.delegate?.lineViewRequestsHide(view) }
         let window = windows[key] ?? NSWindow(contentRect: CGRect(origin: .zero,size: size), styleMask: [.titled,.closable,.miniaturizable,.resizable], backing: .buffered, defer: false)
+        window.delegate = self
         window.title = title; window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: content())
         window.setContentSize(size); window.center(); windows[key] = window
         NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
     }
-    func perform(_ action: LineAction) {
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        windows = windows.filter { $0.value !== window }
+        window.contentViewController = nil
+    }
+    func perform(_ action: LineAction, from anchor: NSView? = nil) {
         switch action {
-        case .preview: view?.toggleQuickLook()
+        case .preview: preview(from: anchor)
         case .copy: _ = DragWriters.copyToPasteboard(model.selectedItems, model: model)
-        case .share: share()
+        case .share: share(from: anchor)
         case .prepare: if let item = model.selectedItems.first { prepare(item) }
         case .export: export()
         case .browse: browse()
@@ -55,7 +62,16 @@ final class WorkflowActions {
         guard !items.isEmpty else { return }
         present("Export Collection", key: "export", size: CGSize(width: 690,height: 650)) { RecipeView(model: model, items: items) }
     }
-    func share() {
+    func preview(from anchor: NSView?) {
+        if anchor?.window === view?.window, view?.window?.isVisible == true { view?.toggleQuickLook(); return }
+        guard let view else { return }
+        let items = model.selectedItems
+        let entries = items.compactMap { item in view.actions.previewURL(for: item).map { (item.title,$0) } }
+        guard entries.count == items.count else { showWorkflowError(WorkflowError.unreadable("one or more selected items")); return }
+        guard !entries.isEmpty else { return }
+        present("Preview",key: "preview",size: CGSize(width: 760,height: 600)) { CollectionPreview(entries: entries) }
+    }
+    func share(from requestedAnchor: NSView? = nil) {
         let items = model.selectedItems
         let files = model.files
         Task {
@@ -70,9 +86,9 @@ final class WorkflowActions {
                 return (payload, missing)
             }.value
             guard result.1.isEmpty else { showWorkflowError(WorkflowError.unreadable(result.1.joined(separator: ", "))); return }
-            guard !result.0.isEmpty, let view = self.view else { return }
+            guard !result.0.isEmpty, let anchor = requestedAnchor ?? self.view, anchor.window?.isVisible == true else { return }
             sharePicker = NSSharingServicePicker(items: result.0)
-            sharePicker?.show(relativeTo: CGRect(x: view.bounds.midX,y: view.bounds.height-40,width: 1,height: 1), of: view, preferredEdge: .minY)
+            sharePicker?.show(relativeTo: CGRect(x: anchor.bounds.midX,y: anchor.bounds.midY,width: 1,height: 1), of: anchor, preferredEdge: .minY)
         }
     }
 }

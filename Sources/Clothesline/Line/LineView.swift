@@ -78,7 +78,11 @@ final class LineView: NSView {
         layerContentsRedrawPolicy = .never
         layer?.masksToBounds = false
         setupLayers()
-        let controls = NSHostingView(rootView: LineControls(model: model) { [weak self] action in self?.workflow.perform(action) })
+        let controls = NSHostingView(rootView: LineControls(model: model) { [weak self] action, anchor in
+            guard let self else { return }
+            self.delegate?.lineViewRequestsKeyFocus(self)
+            self.workflow.perform(action, from: anchor)
+        })
         self.controls = controls
         addSubview(controls)
         model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged() }.store(in: &cancellables)
@@ -1039,9 +1043,12 @@ final class LineView: NSView {
         return LineLayout.insertionIndex(forX: Double(p.x), in: slots)
     }
 
-    private func isInternal(_ sender: NSDraggingInfo) -> Bool {
-        (sender.draggingSource as? LineView) === self
+    private func internalIDs(_ sender: NSDraggingInfo) -> [UUID]? {
+        if (sender.draggingSource as? LineView) === self { return draggingIDs }
+        if let grid = sender.draggingSource as? CollectionDragView, grid.model === model { return grid.draggingIDs }
+        return nil
     }
+    private func isInternal(_ sender: NSDraggingInfo) -> Bool { internalIDs(sender) != nil }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         delegate?.lineViewDidInteract(self)
@@ -1073,7 +1080,8 @@ final class LineView: NSView {
         if isInternal(sender) {
             guard !model.isSearching else { return false }
             internalDropHappened = true
-            let moving = Set(draggingIDs)
+            (sender.draggingSource as? CollectionDragView)?.didDropInternally = true
+            let moving = Set(internalIDs(sender) ?? [])
             let before = orderedIDs.prefix(index).filter { !moving.contains($0) }.count
             model.move(moving, toPosition: before)
             return true
@@ -1121,13 +1129,7 @@ final class LineView: NSView {
 
 extension LineView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        if context == .withinApplication { return [.move, .copy] }
-        // File safety: outside Clothesline a drag is a copy. Finder would otherwise
-        // *move* a file dropped on the same volume. Holding ⌘ opts into a move,
-        // matching Finder's own convention. Trash (.delete) is never offered.
-        let allReferenced = draggingIDs.allSatisfy { model.board.item($0)?.file != nil }
-        if allReferenced && NSEvent.modifierFlags.contains(.command) { return .move }
-        return .copy
+        DragPolicy.operation(items: draggingIDs.compactMap { model.board.item($0) },context: context,modifiers: NSEvent.modifierFlags)
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {

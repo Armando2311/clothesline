@@ -304,6 +304,10 @@ final class AppModel: ObservableObject {
 
     // MARK: - Editing
 
+    func createNote(_ text: String) -> UUID? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return add(HangingItem(kind: .text,source: .manual,title: ItemClassifier.title(forText: text),lineID: board.activeLineID,text: text),at: nil)
+    }
     func editNote(_ id: UUID, text: String) { mutate { $0.editNote(id, text: text) } }
     func renameItem(_ id: UUID, title: String) { mutate { $0.rename(id, to: title) } }
 

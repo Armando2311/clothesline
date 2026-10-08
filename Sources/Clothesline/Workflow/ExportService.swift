@@ -32,6 +32,15 @@ enum ExportService {
         let fm = FileManager.default
         let missing = inputs.filter { ($0.item.kind.isFileBacked || $0.url != nil) && ($0.url == nil || !fm.fileExists(atPath: $0.url!.path)) }
         guard missing.isEmpty else { throw WorkflowError.unreadable(missing.map { $0.item.title }.joined(separator: ", ")) }
+        let canonicalDestination = destination.resolvingSymlinksInPath().standardizedFileURL.path
+        for input in inputs {
+            guard let url = input.url,
+                  (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let source = url.resolvingSymlinksInPath().standardizedFileURL.path
+            guard canonicalDestination != source, !canonicalDestination.hasPrefix(source + "/") else {
+                throw NSError(domain: "Clothesline",code: 3,userInfo: [NSLocalizedDescriptionKey: "Choose an export folder outside the folders you are exporting."])
+            }
+        }
         let stage = destination.appendingPathComponent(".clothesline-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: stage, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: stage) }
@@ -58,8 +67,10 @@ enum ExportService {
                 } else {
                     try fm.copyItem(at: url, to: output)
                 }
-                let escaped = fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? fileName
-                report += "- [\(fileName)](\(escaped))\n"
+                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "()[]#?"))
+                let escaped = fileName.addingPercentEncoding(withAllowedCharacters: allowed) ?? fileName
+                let label = fileName.replacingOccurrences(of: "[",with: "\\[").replacingOccurrences(of: "]",with: "\\]")
+                report += "- [\(label)](\(escaped))\n"
             } else if let text = input.item.text { report += "\n### \(input.item.title)\n\n\(text)\n\n" }
             else if let link = input.item.link { report += "- \(input.item.title): \(link)\n" }
             progress(Double(position+1)/Double(inputs.count+1))
@@ -76,7 +87,7 @@ enum ExportService {
             do {
                 while process.isRunning { try cancellation.check(); Thread.sleep(forTimeInterval: 0.05) }
                 process.waitUntilExit()
-            } catch { process.terminate(); process.waitUntilExit(); throw error }
+            } catch { if process.isRunning { process.terminate() }; process.waitUntilExit(); throw error }
             guard process.terminationStatus == 0 else { throw NSError(domain: "Clothesline", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create the ZIP archive."]) }
         }
         try cancellation.check()

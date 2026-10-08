@@ -18,7 +18,7 @@ struct NoteEditor: View {
                 Text(saved ? "Saved on your line" : "Your note stays in Clothesline.").foregroundStyle(.secondary)
                 Spacer()
                 Button("Save Note") {
-                    if let id = noteID { model.editNote(id,text: text) } else { noteID = model.hang(text: text,source: .manual); if noteID == nil { return } }
+                    if let id = noteID { model.editNote(id,text: text) } else { noteID = model.createNote(text); if noteID == nil { return } }
                     saved = true
                 }.keyboardShortcut("s").disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (noteID != nil && model.board.item(noteID!) == nil))
             }

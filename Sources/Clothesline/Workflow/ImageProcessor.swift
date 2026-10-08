@@ -16,6 +16,17 @@ struct ImageEdits: Equatable {
     var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
     var maxEdge = 1600
     var marks: [ImageMark] = []
+    mutating func applyCrop(_ region: CGRect) {
+        guard region.width > 0, region.height > 0 else { return }
+        let old = crop
+        crop = CGRect(x: old.minX+region.minX*old.width,y: old.minY+region.minY*old.height,width: region.width*old.width,height: region.height*old.height)
+        marks = marks.map { mark in
+            var transformed = mark
+            transformed.start = CGPoint(x: (mark.start.x-region.minX)/region.width,y: (mark.start.y-region.minY)/region.height)
+            transformed.end = CGPoint(x: (mark.end.x-region.minX)/region.width,y: (mark.end.y-region.minY)/region.height)
+            return transformed
+        }
+    }
 }
 
 enum ImageProcessor {
