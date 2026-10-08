@@ -11,6 +11,10 @@ MainActor.assumeIsolated {
         exit(0)
     }
 
+    if CommandLine.arguments.contains("--self-test") {
+        exit(SelfTest.run())
+    }
+
     let delegate = AppDelegate()
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
