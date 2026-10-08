@@ -109,6 +109,13 @@ public struct Board: Codable, Equatable, Sendable {
         items[i].title = trimmed
     }
 
+    public mutating func editNote(_ id: UUID, text: String) {
+        guard let i = items.firstIndex(where: { $0.id == id && $0.kind == .text }),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        items[i].text = text
+        items[i].title = ItemClassifier.title(forText: text)
+    }
+
     public mutating func updateFile(_ id: UUID, _ file: FileReference) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         items[i].file = file

@@ -96,6 +96,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var afterDragOut: AfterDragOut = .keepOnLine
 
     // Appearance & motion
+    public var appearanceStyle: AppearanceStyle = .illustrated
     public var theme: ThemeChoice = .automatic
     public var ambientEffects: Bool = true
     public var gentleBreeze: Bool = true
@@ -109,7 +110,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case toggleShortcut, hangClipboardShortcut, showMenuBarIcon, hideWhenClickingOutside, revealOnDragToTopEdge
         case collectScreenshots, revealOnScreenshot, includeScreenRecordings, customScreenshotFolder, customScreenshotFolderBookmark, screenshotLineID
-        case afterDragOut, theme, ambientEffects, gentleBreeze, playSounds, retention
+        case afterDragOut, appearanceStyle, theme, ambientEffects, gentleBreeze, playSounds, retention
     }
 
     public init(from decoder: Decoder) throws {
@@ -128,6 +129,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         customScreenshotFolderBookmark = try? c.decodeIfPresent(Data.self, forKey: .customScreenshotFolderBookmark)
         screenshotLineID = try? c.decodeIfPresent(UUID.self, forKey: .screenshotLineID)
         afterDragOut = (try? c.decodeIfPresent(AfterDragOut.self, forKey: .afterDragOut)) ?? d.afterDragOut
+        appearanceStyle = (try? c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle)) ?? d.appearanceStyle
         theme = (try? c.decodeIfPresent(ThemeChoice.self, forKey: .theme)) ?? d.theme
         ambientEffects = (try? c.decodeIfPresent(Bool.self, forKey: .ambientEffects)) ?? d.ambientEffects
         gentleBreeze = (try? c.decodeIfPresent(Bool.self, forKey: .gentleBreeze)) ?? d.gentleBreeze
@@ -150,6 +152,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try c.encodeIfPresent(customScreenshotFolderBookmark, forKey: .customScreenshotFolderBookmark)
         try c.encodeIfPresent(screenshotLineID, forKey: .screenshotLineID)
         try c.encode(afterDragOut, forKey: .afterDragOut)
+        try c.encode(appearanceStyle, forKey: .appearanceStyle)
         try c.encode(theme, forKey: .theme)
         try c.encode(ambientEffects, forKey: .ambientEffects)
         try c.encode(gentleBreeze, forKey: .gentleBreeze)
