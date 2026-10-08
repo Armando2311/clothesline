@@ -51,13 +51,14 @@ open Clothesline.xcodeproj
 ### Tests
 
 ```bash
-swift test   # 40 unit tests for the core logic; also run on Linux in CI
+swift test   # 42 unit tests for the core logic; also run on Linux in CI
 ```
 
 CI (`.github/workflows/build.yml`) runs on every push. It runs the core tests on Linux and
 macOS, builds the universal app bundle, verifies the signature, launches the app and checks
-that it stays running and idle, renders the line with sample items to an image, and builds
-the XcodeGen project.
+that it stays running and idle, runs `Clothesline --self-test` (real files, pasteboards and
+bookmarks), runs `Scripts/e2e-screenshot-test.sh` against the real binary, renders the line
+with sample items to an image, and builds the XcodeGen project.
 
 `Clothesline --render-preview out.png` draws the real line view with sample content
 (all four themes plus the empty state) without opening a window.
@@ -111,6 +112,6 @@ the XcodeGen project.
 * The default build is ad hoc signed. To distribute it, sign with a Developer ID
   (`CODESIGN_IDENTITY=… Scripts/build-app.sh`) and notarize it.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions and
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions,
 [docs/TESTING.md](docs/TESTING.md) for what has been verified and what still needs manual
-testing.
+testing, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.

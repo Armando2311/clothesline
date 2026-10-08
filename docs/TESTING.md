@@ -5,16 +5,33 @@ visually** from rendered output, and what **still needs a person at a Mac**. The
 developed in a Linux container without a display; all macOS verification ran on GitHub
 Actions `macos-15` runners.
 
-## 1. Automated (runs on every push)
+## 1. Automated (runs on every push) — all passing
+
+Latest green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.
 
 | Check | Where | Result |
 |---|---|---|
-| Core unit tests: board operations, dedupe, ordering, lines, retention, expiry scheduling, persistence round trip, corrupt-file recovery, owned-file deletion confinement (incl. path traversal), settings decoding, screenshot classification, link detection, rope geometry, layout, panel placement for notched/plain/external displays | Linux + macOS | see CI |
-| App compiles (debug + universal release, arm64 + x86_64) | macOS | see CI |
-| Bundle: Info.plist lint, `lipo` architectures, `codesign --verify --strict` | macOS | see CI |
-| Launch smoke test: app starts, stays alive 16 s, reports CPU/RSS while idle | macOS | see CI |
-| Render test: real `LineView` with sample items in 4 themes + empty state → PNG | macOS | see CI |
-| XcodeGen project generates and builds | macOS | see CI |
+| 42 core unit tests: board operations, dedupe, ordering, lines, retention, expiry scheduling, persistence round trip, corrupt-file recovery, owned-file deletion confinement (incl. path traversal), settings decoding, screenshot classification, link detection, rope geometry, layout, panel placement for notched/plain/external displays | Linux + macOS | ✅ 42/42 |
+| App compiles: debug, and universal release (arm64 + x86_64) | macOS | ✅ (1 Swift 6-mode warning fixed; 0 warnings remaining in the last log) |
+| Bundle: `plutil -lint`, `lipo -info` (x86_64 arm64), `codesign --verify --deep --strict` | macOS | ✅ |
+| Launch smoke test: app starts and stays up; idle CPU after 16 s **0.0 %**, RSS **≈32 MB** | macOS | ✅ |
+| `--self-test` (27 checks with real files, pasteboards and bookmarks): file drop hung by reference with no copy; duplicate drop ignored; pasted image becomes an owned copy inside Clothesline's folder; URL string → link, text → note; drag-out writers give the real file URL, note text + file promise, link `public.url`; removing never touches referenced files; owned copy kept while undoable, deleted once final; undo restores; bookmark follows a rename; deleted file → MISSING and stays on the line; state restored after relaunch in order; Copy To never overwrites; screen-capture attribute read correctly | macOS | ✅ 27/27 |
+| Screenshot end-to-end (real app binary, simulated `screencapture` writes): single shot hung; burst of 5 hung without duplicates; impostor image named "Screenshot …" and unrelated image ignored; re-touching doesn't duplicate; `defaults write com.apple.screencapture location` followed live without restart | macOS | ✅ 5/5 |
+| Render test: real `LineView` with sample items in 4 themes + empty state + selection | macOS | ✅ inspected visually |
+| XcodeGen project generates and builds | macOS | ✅ |
+
+### Bug found by these tests
+The end-to-end test caught a real defect: FSEvents reports canonical paths
+(`/private/var/…`) while the watched folder was compared in its symlinked form
+(`/var/…`), so screenshots in symlinked folders were silently ignored. Fixed by comparing
+`realpath()`s (commit `2fd3653`).
+
+### What automation cannot cover
+Mouse-driven drag sessions between apps, the actual ⇧⌘3 keystroke path, global hotkey
+delivery, focus behaviour with other apps, notch placement on real hardware, animation feel
+and Quick Look all need a person — see §2. The simulated screenshot test reproduces exactly
+what `screencapture` writes to disk (hidden temp file → attribute → rename), but not the
+keystroke itself.
 
 ## 2. Manual verification checklist
 
@@ -28,7 +45,7 @@ Run on real hardware. Record macOS version and Mac model for each run.
 - [ ] ⇧⌘5 › Options › Clipboard → Settings › Screenshots shows the clipboard notice; ⌃⌥V hangs it.
 - [ ] Copy an old screenshot into the Desktop → **not** hung.
 - [ ] Save a regular image named "Screenshot …png" to the Desktop from another app → not hung (no screen-capture attribute).
-- [ ] Take a screenshot, sleep the Mac, wake → watcher still works; screenshots taken while asleep… (n/a) / taken right before sleep appear once.
+- [ ] Take a screenshot, sleep the Mac, wake → watcher still works; a screenshot taken right before sleep appears exactly once.
 - [ ] Screenshot folder on an external drive, unplug and replug → status shows unavailable, then recovers.
 - [ ] Screen recording with "Include screen recordings" on/off.
 

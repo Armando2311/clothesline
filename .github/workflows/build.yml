@@ -42,7 +42,7 @@ jobs:
           lipo -info build/Clothesline.app/Contents/MacOS/Clothesline
           codesign --verify --deep --strict --verbose=2 build/Clothesline.app
       - name: Launch smoke test
-        run: PREVIEW_BASE64=1 Scripts/smoke-test.sh build/Clothesline.app
+        run: Scripts/smoke-test.sh build/Clothesline.app
       - name: App self-test (files, pasteboards, bookmarks)
         run: build/Clothesline.app/Contents/MacOS/Clothesline --self-test
       - name: Screenshot end-to-end test
