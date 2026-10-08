@@ -20,6 +20,24 @@ final class AppModel: ObservableObject {
     @Published var hotKeyResults: [HotKeyCenter.Action: HotKeyCenter.RegistrationResult] = [:]
     @Published private(set) var canUndoRemoval = false
 
+    @Published var query = "" {
+        didSet { reconcileSelection(); refreshOCR() }
+    }
+    @Published var selectedIDs: Set<UUID> = []
+    @Published private(set) var recognizedText: [UUID: String] = [:]
+    private let ocr = OCRIndex()
+    var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var visibleItems: [HangingItem] { ItemSearch.results(board: board, query: query, recognizedText: recognizedText) }
+    var selectedItems: [HangingItem] { visibleItems.filter { selectedIDs.contains($0.id) } }
+    private func reconcileSelection() { selectedIDs.formIntersection(Set(visibleItems.map(\.id))) }
+    func refreshOCR() {
+        guard isSearching else { ocr.stop(); return }
+        ocr.refresh(board.items.compactMap { item in
+            guard [.image, .screenshot].contains(item.kind), let url = url(for: item) else { return nil }
+            return (item.id, url)
+        })
+    }
+
     /// How the most recent removal should look on screen.
     enum RemovalStyle { case unclip, delivered }
     private(set) var lastRemovalStyle: RemovalStyle = .unclip
@@ -60,6 +78,10 @@ final class AppModel: ObservableObject {
         } else {
             settings = AppSettings()
         }
+        ocr.changed = { [weak self] text in
+            self?.recognizedText = text
+            self?.reconcileSelection()
+        }
         store.collectGarbage(keeping: board)
         applyRetention()
     }
@@ -77,6 +99,8 @@ final class AppModel: ObservableObject {
         change(&copy)
         guard copy != board else { return }
         board = copy
+        reconcileSelection()
+        refreshOCR()
         scheduleSave()
         scheduleExpiryCheck()
     }
@@ -93,6 +117,7 @@ final class AppModel: ObservableObject {
     /// Called at quit: applies quit-time cleanup, deletes owned copies whose
     /// removal can no longer be undone, and writes the final state.
     func prepareForTermination() {
+        ocr.stop()
         if settings.retention.clearUnpinnedOnQuit {
             for line in board.lines {
                 let ids = Set(board.items(on: line.id).filter { !$0.pinned }.map(\.id))
@@ -279,6 +304,9 @@ final class AppModel: ObservableObject {
 
     // MARK: - Editing
 
+    func editNote(_ id: UUID, text: String) { mutate { $0.editNote(id, text: text) } }
+    func renameItem(_ id: UUID, title: String) { mutate { $0.rename(id, to: title) } }
+
     func setPinned(_ ids: Set<UUID>, _ pinned: Bool) { mutate { $0.setPinned(ids, pinned) } }
 
     func togglePinned(_ ids: Set<UUID>) {
@@ -337,6 +365,7 @@ final class AppModel: ObservableObject {
                     if self.availability[id] != resolution.availability { self.availability[id] = resolution.availability }
                     if let updated = resolution.updatedReference { updates.append((id, updated)) }
                 }
+                self.refreshOCR()
                 if !updates.isEmpty {
                     self.recentlyAdded = []
                     self.mutate { board in for (id, ref) in updates { board.updateFile(id, ref) } }
