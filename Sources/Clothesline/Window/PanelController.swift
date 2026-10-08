@@ -128,7 +128,13 @@ final class PanelController: NSObject, LineViewDelegate {
         if #available(macOS 12.0, *), screen.safeAreaInsets.top > 0,
            let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
             // The camera housing is the gap between the two auxiliary areas.
-            notch = CGRect(x: left.maxX, y: min(left.minY, right.minY), width: right.minX - left.maxX, height: max(left.height, right.height))
+            // Only their widths are used, so this doesn't depend on which
+            // coordinate space the areas are reported in.
+            let f = screen.frame
+            let width = f.width - left.width - right.width
+            if width > 0 {
+                notch = CGRect(x: f.minX + left.width, y: f.maxY - screen.safeAreaInsets.top, width: width, height: screen.safeAreaInsets.top)
+            }
         }
         let safeTop: Double
         if #available(macOS 12.0, *) { safeTop = Double(screen.safeAreaInsets.top) } else { safeTop = 0 }

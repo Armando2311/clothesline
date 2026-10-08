@@ -43,6 +43,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     private var prefsStream: FSEventStreamRef?
     private var config = Config(enabled: false, includeRecordings: false, customFolder: nil)
     private var folder: URL?
+    private var folderRealPath: String?
     private var preferences = ScreenshotPreferences()
     /// Paths already reported (bounded), to make detection idempotent.
     private var reported: [String] = []
@@ -95,6 +96,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
             return
         }
         folder = target
+        folderRealPath = Self.realPath(target.path)
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDir), isDir.boolValue else {
             publishStatus(watching: false, problem: "The screenshot folder “\(target.lastPathComponent)” is not available.")
@@ -215,8 +217,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 }
                 guard f & kFSEventStreamEventFlagItemIsFile != 0,
                       f & (kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed) != 0 else { continue }
-                // Only direct children of the folder.
-                guard (path as NSString).deletingLastPathComponent == folder.path else { continue }
+                // Only direct children of the folder. FSEvents reports canonical
+                // paths (e.g. /private/var/… for /var/…), so compare real paths.
+                let parent = (path as NSString).deletingLastPathComponent
+                guard parent == folder.path || Self.realPath(parent) == folderRealPath else { continue }
                 consider(path, attempt: 0)
             }
             if needsReconcile { reconcile() }
@@ -294,6 +298,15 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 report(url)
             }
         }
+    }
+
+    /// Canonical path with all symlinks resolved. Unlike
+    /// `URL.resolvingSymlinksInPath()`, this keeps the `/private` prefix, which
+    /// is what FSEvents reports.
+    static func realPath(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     /// Reads the screen-capture marker attribute. Returns nil if attributes are

@@ -34,6 +34,7 @@ final class LineView: NSView {
     private var itemLayers: [UUID: ItemLayer] = [:]
     /// Layers created since the last layout; they get placed, not moved.
     private var freshLayers: Set<UUID> = []
+    private var thumbnailRetries: Set<UUID> = []
     private var hintLayer: CALayer?
     private let captionLayer = CATextLayer()
     private let lineNameLayer = CATextLayer()
@@ -407,9 +408,16 @@ final class LineView: NSView {
                 thumb = model.thumbnails.cached(for: url, size: size, scale: scale)
                 if thumb == nil {
                     model.thumbnails.thumbnail(for: url, size: size, scale: scale) { [weak self] image in
-                        guard image != nil else { return }
-                        self?.updateCard(for: id)
-                        self?.relayout(animated: false)
+                        guard let self else { return }
+                        guard image != nil else {
+                            // A file that was only just written can fail once; retry a single time.
+                            if self.thumbnailRetries.insert(id).inserted {
+                                after(1.0) { [weak self] in self?.updateCard(for: id) }
+                            }
+                            return
+                        }
+                        self.updateCard(for: id)
+                        self.relayout(animated: false)
                     }
                 }
             } else if item.kind == .file {
