@@ -53,3 +53,11 @@ jobs:
         with:
           name: Clothesline.app
           path: build/Clothesline.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview
+          path: |
+            build/preview.png
+            build/preview.jpg
+          if-no-files-found: ignore

@@ -23,6 +23,9 @@ mkdir -p build
 "$BIN" --render-preview build/preview.png
 test -s build/preview.png
 sips -Z 1500 -s format jpeg -s formatOptions 60 build/preview.png --out build/preview.jpg >/dev/null
-echo "PREVIEW-BASE64-BEGIN"
-base64 -i build/preview.jpg | fold -w 1000
-echo "PREVIEW-BASE64-END"
+if [[ "${PREVIEW_BASE64:-0}" == 1 ]]; then
+  echo "PREVIEW-BASE64-BEGIN"
+  base64 -i build/preview.jpg | fold -w 1000
+  echo "PREVIEW-BASE64-END"
+fi
+echo "Preview: build/preview.png"
