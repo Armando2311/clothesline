@@ -43,10 +43,10 @@ func drawIcon(in ctx: CGContext, size s: CGFloat) {
     }
 
     // Rope.
-    let ropeY = rect.minY + rect.height * 0.74
+    let ropeBaseY = rect.minY + rect.height * 0.74
     let rope = CGMutablePath()
-    rope.move(to: CGPoint(x: rect.minX - 4, y: ropeY + rect.height * 0.04))
-    rope.addQuadCurve(to: CGPoint(x: rect.maxX + 4, y: ropeY + rect.height * 0.04), control: CGPoint(x: rect.midX, y: ropeY - rect.height * 0.12))
+    rope.move(to: CGPoint(x: rect.minX - 4, y: ropeBaseY + rect.height * 0.04))
+    rope.addQuadCurve(to: CGPoint(x: rect.maxX + 4, y: ropeBaseY + rect.height * 0.04), control: CGPoint(x: rect.midX, y: ropeBaseY - rect.height * 0.12))
     ctx.addPath(rope)
     ctx.setStrokeColor(color(0xB8916A).cgColor)
     ctx.setLineWidth(max(1, s * 0.014))
@@ -54,7 +54,7 @@ func drawIcon(in ctx: CGContext, size s: CGFloat) {
 
     func ropeY(at x: CGFloat) -> CGFloat {
         let t = (x - (rect.minX - 4)) / (rect.width + 8)
-        let y0 = ropeY + rect.height * 0.04, yc = ropeY - rect.height * 0.12
+        let y0 = ropeBaseY + rect.height * 0.04, yc = ropeBaseY - rect.height * 0.12
         return (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * yc + t * t * y0
     }
 

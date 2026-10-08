@@ -32,6 +32,8 @@ final class LineView: NSView {
     private var hookLayers: [CALayer] = []
     private let itemsLayer = CALayer()
     private var itemLayers: [UUID: ItemLayer] = [:]
+    /// Layers created since the last layout; they get placed, not moved.
+    private var freshLayers: Set<UUID> = []
     private var hintLayer: CALayer?
     private let captionLayer = CATextLayer()
     private let lineNameLayer = CATextLayer()
@@ -372,6 +374,7 @@ final class LineView: NSView {
         let l = ItemLayer(itemID: id)
         itemsLayer.addSublayer(l)
         itemLayers[id] = l
+        freshLayers.insert(id)
         updateCard(for: id)
         return l
     }
@@ -452,7 +455,8 @@ final class LineView: NSView {
             let newPos = CGPoint(x: slot.x, y: slot.y)
             let newTransform = CATransform3DMakeRotation(CGFloat(slot.rotation), 0, 0, 1)
             l.zPosition = CGFloat(i)
-            if animated && l.animation(forKey: "clipOn") == nil {
+            let isFresh = freshLayers.remove(item.id) != nil
+            if animated && !isFresh && l.animation(forKey: "clipOn") == nil {
                 let from = l.presentation()?.position ?? l.position
                 if hypot(from.x - newPos.x, from.y - newPos.y) > 0.5 {
                     let move = CASpringAnimation(keyPath: "position")
