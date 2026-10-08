@@ -1,0 +1,7 @@
+.build/
+build/
+Clothesline.xcodeproj/
+DerivedData/
+.swiftpm/
+xcuserdata/
+.DS_Store
