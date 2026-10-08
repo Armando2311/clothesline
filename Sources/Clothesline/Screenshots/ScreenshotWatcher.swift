@@ -267,8 +267,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
         report(url)
     }
 
-    private func report(_ url: URL) {
-        let path = url.path
+    private func report(_ original: URL) {
+        // One canonical spelling per file, whichever route found it.
+        let path = Self.realPath(original.path)
+        let url = URL(fileURLWithPath: path)
         guard reportedSet.insert(path).inserted else { return }
         reported.append(path)
         if reported.count > 500 {
@@ -291,7 +293,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                   let created = v.creationDate, created >= since else { return nil }
             return (url, created)
         }.sorted { $0.1 < $1.1 }
-        for (url, created) in fresh where !reportedSet.contains(url.path) {
+        for (url, created) in fresh where !reportedSet.contains(Self.realPath(url.path)) {
             // Reconciliation requires the screenshot attribute: no name guessing for older files.
             let candidate = ScreenshotClassifier.Candidate(fileName: url.lastPathComponent, hasScreenCaptureAttribute: Self.screenCaptureAttribute(at: url.path) ?? false, creationDate: created)
             if classifier.classify(candidate) != .notScreenshot, candidate.hasScreenCaptureAttribute == true {
