@@ -49,9 +49,9 @@ public struct ScreenshotPreferences: Equatable, Sendable {
 /// The primary signal is the `com.apple.metadata:kMDItemIsScreenCapture`
 /// extended attribute that `screencapture` writes onto every screenshot file.
 /// It is local, needs no Spotlight index and survives custom file names. The
-/// filename heuristics are only a fallback for files that have no such
-/// attribute (e.g. volumes without xattr support), and in that case the file
-/// must also be brand new so old files copied into the folder are not imported.
+/// filename heuristics are only a fallback for volumes where attributes can't
+/// be read at all, and then the file must also be brand new so old files
+/// copied into the folder are not imported.
 public struct ScreenshotClassifier: Sendable {
     public static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "tiff", "tif", "gif", "pdf", "bmp"]
     public static let recordingExtensions: Set<String> = ["mov", "mp4"]
@@ -109,9 +109,16 @@ public struct ScreenshotClassifier: Sendable {
         guard isImage || (isRecording && includeRecordings) else { return .notScreenshot }
 
         let hit: Verdict = isRecording ? .recording : .screenshot
-        if c.hasScreenCaptureAttribute == true { return hit }
+        switch c.hasScreenCaptureAttribute {
+        case true?: return hit
+        // The volume supports attributes and this file has none: some other
+        // app wrote it, whatever its name. Not a screenshot.
+        case false?: return .notScreenshot
+        case nil: break
+        }
 
-        // Fallback: name-based detection for brand-new files only.
+        // Fallback when attributes can't be read: name-based detection for
+        // brand-new files only.
         guard matchesScreenshotName(c.fileName) else { return .notScreenshot }
         guard let created = c.creationDate, now.timeIntervalSince(created) <= freshnessWindow,
               created.timeIntervalSince(now) < 5 else { return .notScreenshot }

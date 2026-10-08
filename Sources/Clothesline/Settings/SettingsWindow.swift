@@ -390,7 +390,11 @@ struct ShortcutRecorder: NSViewRepresentable {
             HotKeyCenter.shared.suspend()
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
                 guard let self else { return event }
-                return MainActor.assumeIsolated { self.handle(event) ? nil : event }
+                // Extract plain values first; NSEvent itself is not Sendable.
+                let keyCode = event.keyCode
+                let candidate = Shortcut(event: event)
+                let consumed = MainActor.assumeIsolated { self.handle(keyCode: keyCode, candidate: candidate) }
+                return consumed ? nil : event
             }
         }
 
@@ -401,8 +405,8 @@ struct ShortcutRecorder: NSViewRepresentable {
             isRecording = false
         }
 
-        private func handle(_ event: NSEvent) -> Bool {
-            switch Int(event.keyCode) {
+        private func handle(keyCode: UInt16, candidate: Shortcut?) -> Bool {
+            switch Int(keyCode) {
             case 53: stop(); return true // Esc
             case 51, 117:
                 shortcut = nil
@@ -410,7 +414,7 @@ struct ShortcutRecorder: NSViewRepresentable {
                 stop()
                 return true
             default:
-                guard let s = Shortcut(event: event), s.isValidGlobalShortcut else {
+                guard let s = candidate, s.isValidGlobalShortcut else {
                     NSSound.beep()
                     return true
                 }

@@ -9,8 +9,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var customFolderAccess: URL?
 
+    /// Test/automation overrides (not persisted):
+    ///   --state-dir <dir>          keep state somewhere other than Application Support
+    ///   --screenshot-folder <dir>  watch this folder instead of the macOS setting
+    private static func argument(_ name: String) -> String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     override init() {
-        model = AppModel()
+        if let dir = Self.argument("--state-dir") {
+            model = AppModel(store: BoardStore(directory: URL(fileURLWithPath: dir, isDirectory: true)))
+        } else {
+            model = AppModel()
+        }
         super.init()
     }
 
@@ -88,7 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         customFolderAccess?.stopAccessingSecurityScopedResource()
         customFolderAccess = nil
         var custom: URL?
-        if let path = model.settings.customScreenshotFolder {
+        if let override = Self.argument("--screenshot-folder") {
+            custom = URL(fileURLWithPath: override, isDirectory: true)
+        } else if let path = model.settings.customScreenshotFolder {
             custom = URL(fileURLWithPath: path, isDirectory: true)
             if let data = model.settings.customScreenshotFolderBookmark {
                 var stale = false

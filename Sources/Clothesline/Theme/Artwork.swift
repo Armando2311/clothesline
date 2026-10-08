@@ -205,7 +205,7 @@ enum Artwork {
     private static func drawText(_ text: String, in rect: CGRect, font: NSFont, color: NSColor, alignment: NSTextAlignment = .center, lines: Int = 2) {
         let para = NSMutableParagraphStyle()
         para.alignment = alignment
-        para.lineBreakMode = lines == 1 ? .byTruncatingMiddle : .byWordWrapping
+        para.lineBreakMode = lines == 1 ? (alignment == .left ? .byTruncatingTail : .byTruncatingMiddle) : .byWordWrapping
         para.lineSpacing = -1
         let attr = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: para])
         let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .truncatesLastVisibleLine]
@@ -514,25 +514,39 @@ enum Artwork {
             ctx.setBlendMode(.normal)
 
             let link = input.item.link ?? ""
-            let host = URL(string: link)?.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? input.item.title
-            if let globe = NSImage(systemSymbolName: link.hasPrefix("mailto:") ? "envelope" : "globe", accessibilityDescription: nil) {
+            let url = URL(string: link)
+            let isMail = link.hasPrefix("mailto:")
+            let host = url?.host ?? ""
+            let headline = isMail ? "Email" : (host.isEmpty ? input.item.title : Self.shortDomain(host))
+            if let globe = NSImage(systemSymbolName: isMail ? "envelope" : "globe", accessibilityDescription: nil) {
                 let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
                 let tinted = globe.withSymbolConfiguration(config) ?? globe
                 let r = CGRect(x: 25, y: 9, width: 12, height: 12)
                 tinted.draw(in: r, from: .zero, operation: .sourceOver, fraction: 0.65, respectFlipped: true, hints: nil)
             }
-            drawText(host, in: CGRect(x: 39, y: 8, width: size.width - 44, height: 14), font: roundedFont(9.5, weight: .semibold), color: theme.ink, alignment: .left, lines: 1)
-            let path = URL(string: link).map { u -> String in
-                let p = u.path
-                return p.isEmpty || p == "/" ? link : p
-            } ?? link
-            drawText(path, in: CGRect(x: 25, y: 25, width: size.width - 30, height: 26), font: roundedFont(7.5), color: theme.inkSoft, alignment: .left, lines: 2)
+            drawText(headline, in: CGRect(x: 39, y: 8, width: size.width - 44, height: 14), font: roundedFont(10, weight: .semibold), color: theme.ink, alignment: .left, lines: 1)
+            // Full address underneath, without the scheme.
+            var detail = isMail ? String(link.dropFirst("mailto:".count)) : link
+            for prefix in ["https://", "http://"] where detail.hasPrefix(prefix) { detail.removeFirst(prefix.count) }
+            if detail.hasPrefix("www.") { detail.removeFirst(4) }
+            drawText(detail, in: CGRect(x: 25, y: 25, width: size.width - 30, height: 26), font: roundedFont(7.5), color: theme.inkSoft, alignment: .left, lines: 2)
             ctx.addPath(outline)
             ctx.setStrokeColor(NSColor(hex: 0x9C7A45, alpha: 0.4).cgColor)
             ctx.setLineWidth(0.6)
             ctx.strokePath()
         }
         return Card(image: image, size: size, outline: outline)
+    }
+
+    /// "developer.apple.com" → "apple.com"; keeps two-letter country
+    /// second-level domains such as "bbc.co.uk".
+    static func shortDomain(_ host: String) -> String {
+        var labels = host.split(separator: ".").map(String.init)
+        if labels.first == "www" { labels.removeFirst() }
+        guard labels.count > 2 else { return labels.joined(separator: ".") }
+        let tld = labels[labels.count - 1], second = labels[labels.count - 2]
+        let keep = (tld.count == 2 && ["co", "com", "ac", "gov", "org", "net", "ne", "or", "edu"].contains(second)) ? 3 : 2
+        return labels.suffix(keep).joined(separator: ".")
     }
 
     // MARK: - Empty-state tag
@@ -628,15 +642,27 @@ enum Artwork {
             let cx: CGFloat = (CGFloat(i) + CGFloat(rng.next(in: 0.15...0.85))) * band
             let cy: CGFloat = CGFloat(rng.next(in: 0.25...0.62)) * size.height
             let w = CGFloat(rng.next(in: 90...190))
-            let puffs = Int(rng.next(in: 6...10))
+            let puffs = Int(rng.next(in: 7...11))
+            // Cumulus clouds have soft tops and a flatter base: clip a little
+            // below the cloud's centre line, with a faint base layer under it.
+            let base: CGFloat = cy + 10
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: 0, y: 0, width: size.width, height: base))
             for _ in 0..<puffs {
                 let px: CGFloat = cx + CGFloat(rng.next(in: -0.5...0.5)) * w
-                let py: CGFloat = cy + CGFloat(rng.next(in: -14...6))
-                let falloff: CGFloat = 1 - abs(px - cx) / w * 0.8
-                let r: CGFloat = CGFloat(rng.next(in: 14...34)) * falloff
+                let falloff: CGFloat = 1 - abs(px - cx) / w * 0.9
+                let r: CGFloat = CGFloat(rng.next(in: 16...34)) * falloff
+                let py: CGFloat = base - r * CGFloat(rng.next(in: 0.35...0.75))
                 let c = CGPoint(x: px, y: py)
                 ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: r, options: [])
             }
+            ctx.restoreGState()
+            let baseRect = CGRect(x: cx - w * 0.55, y: base - 5, width: w * 1.1, height: 9)
+            ctx.saveGState()
+            ctx.translateBy(x: baseRect.midX, y: baseRect.midY)
+            ctx.scaleBy(x: baseRect.width / baseRect.height, y: 1)
+            ctx.drawRadialGradient(g, startCenter: .zero, startRadius: 0, endCenter: .zero, endRadius: baseRect.height / 2, options: [])
+            ctx.restoreGState()
         }
     }
 
@@ -665,21 +691,30 @@ enum Artwork {
         let ha = CGFloat(theme.horizonOpacity)
         drawHills(ctx, size: size, height: 20, amplitude: 9, frequency: 3.2, phase: 0.7, color: hz.withAlphaComponent(ha * 0.55))
 
-        // Rooftops on the far ridge.
+        // Houses and trees on the far ridge.
         var rx = CGFloat(rng.next(in: 20...80))
         ctx.setFillColor(hz.withAlphaComponent(ha * 0.8).cgColor)
         while rx < size.width - 30 {
-            if rng.next(in: 0...1) < 0.55 {
-                let w = CGFloat(rng.next(in: 12...26))
-                let h = CGFloat(rng.next(in: 6...13))
-                let top: CGFloat = baseY - 14 - h
-                ctx.fill(CGRect(x: rx, y: top, width: w, height: h + 14))
-                ctx.move(to: CGPoint(x: rx - 2, y: top))
-                ctx.addLine(to: CGPoint(x: rx + w / 2, y: top - h * 0.45))
-                ctx.addLine(to: CGPoint(x: rx + w + 2, y: top))
+            let pick = rng.next(in: 0...1)
+            if pick < 0.42 {
+                // A small house with a pitched roof that overhangs the walls.
+                let w = CGFloat(rng.next(in: 12...22))
+                let h = CGFloat(rng.next(in: 5...9))
+                let wallTop: CGFloat = baseY - 12 - h
+                let roofHeight: CGFloat = w * CGFloat(rng.next(in: 0.32...0.48))
+                ctx.fill(CGRect(x: rx, y: wallTop, width: w, height: h + 12))
+                ctx.move(to: CGPoint(x: rx - 3, y: wallTop + 1))
+                ctx.addLine(to: CGPoint(x: rx + w / 2, y: wallTop - roofHeight))
+                ctx.addLine(to: CGPoint(x: rx + w + 3, y: wallTop + 1))
+                ctx.closePath()
                 ctx.fillPath()
+            } else if pick < 0.6 {
+                // A round tree.
+                let r = CGFloat(rng.next(in: 5...9))
+                ctx.fillEllipse(in: CGRect(x: rx, y: baseY - 13 - r * 2, width: r * 2, height: r * 2))
+                ctx.fill(CGRect(x: rx + r - 0.75, y: baseY - 14, width: 1.5, height: 6))
             }
-            rx += CGFloat(rng.next(in: 22...70))
+            rx += CGFloat(rng.next(in: 18...60))
         }
         drawHills(ctx, size: size, height: 9, amplitude: 5, frequency: 2.1, phase: 2.1, color: hz.withAlphaComponent(ha))
 

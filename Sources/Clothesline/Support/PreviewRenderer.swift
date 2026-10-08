@@ -55,6 +55,8 @@ enum PreviewRenderer {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
 
+        // Show the selection outline on two prints.
+        view.select(Set(model.activeItems.prefix(2).map(\.id)))
         var rows: [CGImage] = []
         for theme in [ThemeChoice.summerAfternoon, .goldenHour, .rainyDay, .midnight] {
             model.settings.theme = theme

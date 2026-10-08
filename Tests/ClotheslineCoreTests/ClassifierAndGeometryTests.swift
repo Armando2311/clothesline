@@ -31,10 +31,16 @@ final class ScreenshotClassifierTests: XCTestCase {
     func testNameFallbackRequiresFreshFile() {
         let fresh = ScreenshotClassifier.Candidate(fileName: "Screenshot 2026-10-08 at 10.00.00.png", hasScreenCaptureAttribute: nil, creationDate: now.addingTimeInterval(-3))
         XCTAssertEqual(classifier.classify(fresh, now: now), .screenshot)
-        let old = ScreenshotClassifier.Candidate(fileName: "Screenshot 2026-10-08 at 10.00.00.png", hasScreenCaptureAttribute: false, creationDate: now.addingTimeInterval(-86400))
+        let old = ScreenshotClassifier.Candidate(fileName: "Screenshot 2026-10-08 at 10.00.00.png", hasScreenCaptureAttribute: nil, creationDate: now.addingTimeInterval(-86400))
         XCTAssertEqual(classifier.classify(old, now: now), .notScreenshot)
-        let unrelated = ScreenshotClassifier.Candidate(fileName: "holiday.png", hasScreenCaptureAttribute: false, creationDate: now)
+        let unrelated = ScreenshotClassifier.Candidate(fileName: "holiday.png", hasScreenCaptureAttribute: nil, creationDate: now)
         XCTAssertEqual(classifier.classify(unrelated, now: now), .notScreenshot)
+    }
+
+    func testDefinitelyMissingAttributeRejectsEvenScreenshotNames() {
+        // e.g. an image saved by another app as "Screenshot ….png"
+        let impostor = ScreenshotClassifier.Candidate(fileName: "Screenshot 2026-10-08 at 10.00.00.png", hasScreenCaptureAttribute: false, creationDate: now)
+        XCTAssertEqual(classifier.classify(impostor, now: now), .notScreenshot)
     }
 
     func testLocalisedAndCustomNames() {
