@@ -135,8 +135,10 @@ final class LineView: NSView {
 
     /// Called by the panel controller whenever the panel moves to a display.
     func configure(notchCenterX: Double?) {
+        let changed = notchCenterX != self.notchCenterX
         self.notchCenterX = notchCenterX
-        applyTheme(force: true)
+        if changed { rebuildHooks() }
+        applyTheme()
         relayout(animated: false)
     }
 

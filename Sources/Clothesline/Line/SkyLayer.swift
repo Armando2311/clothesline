@@ -58,8 +58,11 @@ final class SkyLayer: CALayer {
     }
 
     func configure(theme: Theme, skyRect: CGRect, scale: CGFloat) {
-        let key = "\(theme.id)-\(Int(skyRect.width))x\(Int(skyRect.height))@\(scale)-\(Motion.reduceTransparency)"
+        let key = "\(theme.id)-\(Int(skyRect.width))x\(Int(skyRect.height))@\(scale)"
+        guard key != configuredKey else { return }
+        configuredKey = key
         frame = skyRect
+        contentsScale = scale
         let local = CGRect(origin: .zero, size: skyRect.size)
         let shape = Self.drawerPath(local)
         shadowLayer.frame = local
@@ -69,9 +72,6 @@ final class SkyLayer: CALayer {
         let mask = CAShapeLayer()
         mask.path = shape
         content.mask = mask
-        guard key != configuredKey else { return }
-        configuredKey = key
-        contentsScale = scale
 
         gradient.frame = local
         gradient.colors = [theme.skyTop.cgColor, theme.skyMiddle.cgColor, theme.skyBottom.cgColor]

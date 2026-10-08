@@ -555,123 +555,156 @@ enum Artwork {
     /// Clouds, stars, light rays and the distant horizon, drawn once per theme
     /// and size. Seeded so the sky looks the same every time it opens.
     static func atmosphere(theme: Theme, size: CGSize, scale: CGFloat) -> CGImage? {
-        render(size: size, scale: scale) { ctx in
+        render(size: size, scale: scale) { (ctx: CGContext) -> Void in
             var rng = SeededRandom(seed: 0xC10_7E5 &+ UInt64(ThemeChoice.allCases.firstIndex(of: theme.id) ?? 0))
-            let space = CGColorSpace(name: CGColorSpace.sRGB)
+            if theme.lightRays { drawLightRays(ctx, theme: theme, size: size, rng: &rng) }
+            if theme.stars { drawStars(ctx, size: size, rng: &rng) }
+            drawClouds(ctx, theme: theme, size: size, rng: &rng)
+            drawHorizon(ctx, theme: theme, size: size, rng: &rng)
+        }
+    }
 
-            if theme.lightRays {
-                let origin = CGPoint(x: theme.glowPosition.x * size.width, y: theme.glowPosition.y * size.height - 40)
-                for i in 0..<5 {
-                    let angle = CGFloat.pi / 2 + (CGFloat(i) - 2) * 0.32 + CGFloat(rng.next(in: -0.06...0.06)) + (theme.glowPosition.x - 0.5) * -0.9
-                    let spread: CGFloat = CGFloat(rng.next(in: 0.035...0.08))
-                    let length = size.height * 2.2
-                    let p1 = CGPoint(x: origin.x + cos(angle - spread) * length, y: origin.y + sin(angle - spread) * length)
-                    let p2 = CGPoint(x: origin.x + cos(angle + spread) * length, y: origin.y + sin(angle + spread) * length)
-                    ctx.saveGState()
-                    ctx.move(to: origin); ctx.addLine(to: p1); ctx.addLine(to: p2); ctx.closeSubpath()
-                    ctx.clip()
-                    let g = CGGradient(colorsSpace: space, colors: [
-                        theme.glowColor.withAlphaComponent(0.16).cgColor, theme.glowColor.withAlphaComponent(0).cgColor,
-                    ] as CFArray, locations: [0, 1])!
-                    ctx.drawRadialGradient(g, startCenter: origin, startRadius: 0, endCenter: origin, endRadius: length * 0.45, options: [])
-                    ctx.restoreGState()
-                }
+    private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)
+
+    private static func gradient(_ colors: [NSColor], _ locations: [CGFloat]) -> CGGradient {
+        CGGradient(colorsSpace: sRGB, colors: colors.map(\.cgColor) as CFArray, locations: locations)!
+    }
+
+    private static func drawLightRays(_ ctx: CGContext, theme: Theme, size: CGSize, rng: inout SeededRandom) {
+        let origin = CGPoint(x: theme.glowPosition.x * size.width, y: theme.glowPosition.y * size.height - 40)
+        let g = gradient([theme.glowColor.withAlphaComponent(0.16), theme.glowColor.withAlphaComponent(0)], [0, 1])
+        let length: CGFloat = size.height * 2.2
+        let lean: CGFloat = (theme.glowPosition.x - 0.5) * -0.9
+        for i in 0..<5 {
+            let jitter = CGFloat(rng.next(in: -0.06...0.06))
+            let angle: CGFloat = CGFloat.pi / 2 + (CGFloat(i) - 2) * 0.32 + jitter + lean
+            let spread = CGFloat(rng.next(in: 0.035...0.08))
+            let p1 = CGPoint(x: origin.x + cos(angle - spread) * length, y: origin.y + sin(angle - spread) * length)
+            let p2 = CGPoint(x: origin.x + cos(angle + spread) * length, y: origin.y + sin(angle + spread) * length)
+            ctx.saveGState()
+            ctx.move(to: origin)
+            ctx.addLine(to: p1)
+            ctx.addLine(to: p2)
+            ctx.closePath()
+            ctx.clip()
+            ctx.drawRadialGradient(g, startCenter: origin, startRadius: 0, endCenter: origin, endRadius: length * 0.45, options: [])
+            ctx.restoreGState()
+        }
+    }
+
+    private static func drawStars(_ ctx: CGContext, size: CGSize, rng: inout SeededRandom) {
+        let count = Int(size.width / 9)
+        for _ in 0..<count {
+            let x = CGFloat(rng.next(in: 0...Double(size.width)))
+            let y = CGFloat(rng.next(in: 0...Double(size.height) * 0.75))
+            let r = CGFloat(rng.next(in: 0.3...1.1))
+            let alpha = CGFloat(rng.next(in: 0.25...0.9))
+            ctx.setFillColor(NSColor.white.withAlphaComponent(alpha).cgColor)
+            ctx.fillEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+        }
+        // A few brighter stars with a soft cross.
+        for _ in 0..<6 {
+            let x = CGFloat(rng.next(in: 0...Double(size.width)))
+            let y = CGFloat(rng.next(in: 0...Double(size.height) * 0.5))
+            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.5).cgColor)
+            ctx.setLineWidth(0.5)
+            ctx.move(to: CGPoint(x: x - 4, y: y)); ctx.addLine(to: CGPoint(x: x + 4, y: y))
+            ctx.move(to: CGPoint(x: x, y: y - 4)); ctx.addLine(to: CGPoint(x: x, y: y + 4))
+            ctx.strokePath()
+            ctx.setFillColor(NSColor.white.cgColor)
+            ctx.fillEllipse(in: CGRect(x: x - 1.1, y: y - 1.1, width: 2.2, height: 2.2))
+        }
+    }
+
+    /// Clouds: clusters of soft radial puffs, flatter at the base.
+    private static func drawClouds(_ ctx: CGContext, theme: Theme, size: CGSize, rng: inout SeededRandom) {
+        let opacity = CGFloat(theme.cloudOpacity)
+        let g = gradient([theme.cloudColor.withAlphaComponent(opacity),
+                          theme.cloudColor.withAlphaComponent(opacity * 0.55),
+                          theme.cloudColor.withAlphaComponent(0)], [0, 0.55, 1])
+        let cloudCount = max(3, Int(size.width / 260))
+        let band = size.width / CGFloat(cloudCount)
+        for i in 0..<cloudCount {
+            let cx: CGFloat = (CGFloat(i) + CGFloat(rng.next(in: 0.15...0.85))) * band
+            let cy: CGFloat = CGFloat(rng.next(in: 0.25...0.62)) * size.height
+            let w = CGFloat(rng.next(in: 90...190))
+            let puffs = Int(rng.next(in: 6...10))
+            for _ in 0..<puffs {
+                let px: CGFloat = cx + CGFloat(rng.next(in: -0.5...0.5)) * w
+                let py: CGFloat = cy + CGFloat(rng.next(in: -14...6))
+                let falloff: CGFloat = 1 - abs(px - cx) / w * 0.8
+                let r: CGFloat = CGFloat(rng.next(in: 14...34)) * falloff
+                let c = CGPoint(x: px, y: py)
+                ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: r, options: [])
             }
+        }
+    }
 
-            if theme.stars {
-                for _ in 0..<Int(size.width / 9) {
-                    let p = CGPoint(x: rng.next(in: 0...Double(size.width)), y: rng.next(in: 0...Double(size.height) * 0.75))
-                    let r = CGFloat(rng.next(in: 0.3...1.1))
-                    ctx.setFillColor(NSColor.white.withAlphaComponent(CGFloat(rng.next(in: 0.25...0.9))).cgColor)
-                    ctx.fillEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
-                }
-                // A few brighter stars with a soft cross.
-                for _ in 0..<6 {
-                    let p = CGPoint(x: rng.next(in: 0...Double(size.width)), y: rng.next(in: 0...Double(size.height) * 0.5))
-                    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.5).cgColor)
-                    ctx.setLineWidth(0.5)
-                    ctx.move(to: CGPoint(x: p.x - 4, y: p.y)); ctx.addLine(to: CGPoint(x: p.x + 4, y: p.y))
-                    ctx.move(to: CGPoint(x: p.x, y: p.y - 4)); ctx.addLine(to: CGPoint(x: p.x, y: p.y + 4))
-                    ctx.strokePath()
-                    ctx.setFillColor(NSColor.white.cgColor)
-                    ctx.fillEllipse(in: CGRect(x: p.x - 1.1, y: p.y - 1.1, width: 2.2, height: 2.2))
-                }
-            }
+    private static func drawHills(_ ctx: CGContext, size: CGSize, height: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat, color: NSColor) {
+        let baseY = size.height
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: baseY))
+        var x: CGFloat = 0
+        while x <= size.width {
+            let wave1: CGFloat = sin(x / size.width * .pi * frequency + phase) * amplitude
+            let wave2: CGFloat = sin(x / 37 + phase) * 1.2
+            path.addLine(to: CGPoint(x: x, y: baseY - height - wave1 - wave2))
+            x += 6
+        }
+        path.addLine(to: CGPoint(x: size.width, y: baseY))
+        path.closeSubpath()
+        ctx.addPath(path)
+        ctx.setFillColor(color.cgColor)
+        ctx.fillPath()
+    }
 
-            // Clouds: clusters of soft radial puffs, flatter at the base.
-            let cloudCount = max(3, Int(size.width / 260))
-            for i in 0..<cloudCount {
-                let cx = (CGFloat(i) + CGFloat(rng.next(in: 0.15...0.85))) * size.width / CGFloat(cloudCount)
-                let cy = CGFloat(rng.next(in: 0.25...0.62)) * size.height
-                let w = CGFloat(rng.next(in: 90...190))
-                let puffs = Int(rng.next(in: 6...10))
-                for _ in 0..<puffs {
-                    let px = cx + CGFloat(rng.next(in: -0.5...0.5)) * w
-                    let py = cy + CGFloat(rng.next(in: -14...6))
-                    let r = CGFloat(rng.next(in: 14...34)) * (1 - abs(px - cx) / w * 0.8)
-                    let g = CGGradient(colorsSpace: space, colors: [
-                        theme.cloudColor.withAlphaComponent(CGFloat(theme.cloudOpacity)).cgColor,
-                        theme.cloudColor.withAlphaComponent(CGFloat(theme.cloudOpacity) * 0.55).cgColor,
-                        theme.cloudColor.withAlphaComponent(0).cgColor,
-                    ] as CFArray, locations: [0, 0.55, 1])!
-                    ctx.drawRadialGradient(g, startCenter: CGPoint(x: px, y: py), startRadius: 0, endCenter: CGPoint(x: px, y: py), endRadius: r, options: [])
-                }
-            }
+    /// Two layers of rolling hills, rooftops and utility poles with wires.
+    private static func drawHorizon(_ ctx: CGContext, theme: Theme, size: CGSize, rng: inout SeededRandom) {
+        let baseY = size.height
+        let hz = theme.horizonColor
+        let ha = CGFloat(theme.horizonOpacity)
+        drawHills(ctx, size: size, height: 20, amplitude: 9, frequency: 3.2, phase: 0.7, color: hz.withAlphaComponent(ha * 0.55))
 
-            // Horizon: two layers of rolling hills, rooftops and utility poles.
-            let baseY = size.height
-            func hills(height: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat, color: NSColor, alpha: CGFloat) {
-                let path = CGMutablePath()
-                path.move(to: CGPoint(x: 0, y: baseY))
-                var x: CGFloat = 0
-                while x <= size.width {
-                    let y = baseY - height - sin(x / size.width * .pi * frequency + phase) * amplitude - sin(x / 37 + phase) * 1.2
-                    path.addLine(to: CGPoint(x: x, y: y))
-                    x += 6
-                }
-                path.addLine(to: CGPoint(x: size.width, y: baseY))
-                path.closeSubpath()
-                ctx.addPath(path)
-                ctx.setFillColor(color.withAlphaComponent(alpha).cgColor)
+        // Rooftops on the far ridge.
+        var rx = CGFloat(rng.next(in: 20...80))
+        ctx.setFillColor(hz.withAlphaComponent(ha * 0.8).cgColor)
+        while rx < size.width - 30 {
+            if rng.next(in: 0...1) < 0.55 {
+                let w = CGFloat(rng.next(in: 12...26))
+                let h = CGFloat(rng.next(in: 6...13))
+                let top: CGFloat = baseY - 14 - h
+                ctx.fill(CGRect(x: rx, y: top, width: w, height: h + 14))
+                ctx.move(to: CGPoint(x: rx - 2, y: top))
+                ctx.addLine(to: CGPoint(x: rx + w / 2, y: top - h * 0.45))
+                ctx.addLine(to: CGPoint(x: rx + w + 2, y: top))
                 ctx.fillPath()
             }
-            let hz = theme.horizonColor
-            let ha = CGFloat(theme.horizonOpacity)
-            hills(height: 20, amplitude: 9, frequency: 3.2, phase: 0.7, color: hz, alpha: ha * 0.55)
-
-            // Rooftops on the far ridge.
-            var rx = CGFloat(rng.next(in: 20...80))
-            ctx.setFillColor(hz.withAlphaComponent(ha * 0.8).cgColor)
-            while rx < size.width - 30 {
-                if rng.next(in: 0...1) < 0.55 {
-                    let w = CGFloat(rng.next(in: 12...26)), h = CGFloat(rng.next(in: 6...13))
-                    let top = baseY - 14 - h
-                    ctx.fill(CGRect(x: rx, y: top, width: w, height: h + 14))
-                    ctx.move(to: CGPoint(x: rx - 2, y: top)); ctx.addLine(to: CGPoint(x: rx + w / 2, y: top - h * 0.45)); ctx.addLine(to: CGPoint(x: rx + w + 2, y: top))
-                    ctx.fillPath()
-                }
-                rx += CGFloat(rng.next(in: 22...70))
-            }
-            hills(height: 9, amplitude: 5, frequency: 2.1, phase: 2.1, color: hz, alpha: ha)
-
-            // Utility poles with sagging wires, a quiet everyday detail.
-            ctx.setStrokeColor(hz.withAlphaComponent(min(1, ha * 1.3)).cgColor)
-            ctx.setLineWidth(1)
-            let poleXs = stride(from: size.width * 0.08, to: size.width, by: size.width * 0.29).map { $0 + CGFloat(rng.next(in: -20...20)) }
-            for px in poleXs {
-                ctx.move(to: CGPoint(x: px, y: baseY)); ctx.addLine(to: CGPoint(x: px, y: baseY - 38))
-                ctx.move(to: CGPoint(x: px - 6, y: baseY - 34)); ctx.addLine(to: CGPoint(x: px + 6, y: baseY - 34))
-            }
-            ctx.strokePath()
-            ctx.setLineWidth(0.5)
-            for (a, b) in zip(poleXs, poleXs.dropFirst()) {
-                for dy in [-34.0, -31.0] as [CGFloat] {
-                    ctx.move(to: CGPoint(x: a + 5, y: baseY + dy))
-                    ctx.addQuadCurve(to: CGPoint(x: b - 5, y: baseY + dy), control: CGPoint(x: (a + b) / 2, y: baseY + dy + 9))
-                }
-            }
-            ctx.strokePath()
+            rx += CGFloat(rng.next(in: 22...70))
         }
+        drawHills(ctx, size: size, height: 9, amplitude: 5, frequency: 2.1, phase: 2.1, color: hz.withAlphaComponent(ha))
+
+        // Utility poles with sagging wires, a quiet everyday detail.
+        var poleXs: [CGFloat] = []
+        var px = size.width * 0.08
+        while px < size.width {
+            poleXs.append(px + CGFloat(rng.next(in: -20...20)))
+            px += size.width * 0.29
+        }
+        ctx.setStrokeColor(hz.withAlphaComponent(min(1, ha * 1.3)).cgColor)
+        ctx.setLineWidth(1)
+        for x in poleXs {
+            ctx.move(to: CGPoint(x: x, y: baseY)); ctx.addLine(to: CGPoint(x: x, y: baseY - 38))
+            ctx.move(to: CGPoint(x: x - 6, y: baseY - 34)); ctx.addLine(to: CGPoint(x: x + 6, y: baseY - 34))
+        }
+        ctx.strokePath()
+        ctx.setLineWidth(0.5)
+        for (a, b) in zip(poleXs, poleXs.dropFirst()) {
+            for dy in [-34.0, -31.0] as [CGFloat] {
+                ctx.move(to: CGPoint(x: a + 5, y: baseY + dy))
+                ctx.addQuadCurve(to: CGPoint(x: b - 5, y: baseY + dy), control: CGPoint(x: (a + b) / 2, y: baseY + dy + 9))
+            }
+        }
+        ctx.strokePath()
     }
 
     // MARK: - Ambient particle sprite

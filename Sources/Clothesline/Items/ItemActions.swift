@@ -297,7 +297,7 @@ final class ItemActions: NSObject {
             Task { @MainActor in
                 guard let self else { return }
                 let trashedPaths = Set(trashed.keys.map(\.path))
-                let ids = items.filter { model.url(for: $0).map { trashedPaths.contains($0.path) } ?? false }.map(\.id)
+                let ids = items.filter { item in self.model.url(for: item).map { trashedPaths.contains($0.path) } ?? false }.map(\.id)
                 self.model.remove(Set(ids), style: .unclip, undoable: false)
                 if let error { self.report(["\(error.localizedDescription)"], verb: "moved to the Trash") }
             }
