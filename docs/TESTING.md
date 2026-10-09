@@ -25,6 +25,10 @@ The hover/theme follow-up adds native regressions for hidden initial controls, e
 
 The native Settings window reproduced a 70-point content height: tab labels were visible but option forms were clipped. The tab view now has an explicit 520-point viewport plus padding. A native-window regression failed before the fix and passes afterward; the full suite has 91 passing tests and the Xcode Debug build succeeds.
 
+## Glass refinement — 2026-10-09
+
+The full suite has 92 passing tests and the Xcode Debug build succeeds. A regression failed before adding independent behind-window frosting; it now pins the backdrop identity, `.popover` material, `.active` state and non-emphasized appearance through selection, toolbar visibility, key-window loss and layout refresh. The outer glass wrapper forwards full-panel pointer tracking, including drag events. The toolbar no longer adds an adaptive glass pass. Native sample checks compared the surface before/after selection and with keyboard-search controls visible. Window captures show the finish and its stable tint; exact optical blur over arbitrary desktop content is not pixel-measured by this test.
+
 ## 1. Automated (runs on every push) — all passing
 
 Historical baseline green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.

@@ -74,7 +74,8 @@ final class HoverThemeTests: XCTestCase {
         XCTAssertEqual(controller.lineView.bounds.width,controller.panel.frame.width,accuracy: 1)
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            let effect = try XCTUnwrap(controller.panel.contentView as? NSGlassEffectView)
+            let container = try XCTUnwrap(controller.panel.contentView as? GlassBackdropView)
+            let effect = try XCTUnwrap(container.subviews.compactMap { $0 as? NSGlassEffectView }.first)
             XCTAssertTrue(effect.contentView === controller.lineView)
             XCTAssertEqual(effect.style,.clear)
         }

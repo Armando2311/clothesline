@@ -23,7 +23,7 @@ struct LineControls: View {
                 TextField("Search every line", text: $model.query).textFieldStyle(.plain).focused($searching)
                     .onExitCommand { if searchTarget == "rope" { action(.close,anchor) } else { model.query = ""; searching = false } }
                 if !model.query.isEmpty { Button { model.query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Clear search") }
-            }.padding(6).background(.background.opacity(0.7)).cornerRadius(6).frame(minWidth: 150, maxWidth: 250)
+            }.padding(6).background { if model.settings.theme == .liquidGlass { Color.primary.opacity(0.055) } else { Color(nsColor: .windowBackgroundColor).opacity(0.7) } }.cornerRadius(6).frame(minWidth: 150, maxWidth: 250)
             Text(model.selectedIDs.isEmpty ? "\(model.visibleItems.count) items" : "\(model.selectedIDs.count) selected").font(.caption).foregroundStyle(.secondary).frame(minWidth: 64)
             Spacer(minLength: 0)
             icon("Scroll left", "chevron.left", .previous)
@@ -53,13 +53,11 @@ struct LineControls: View {
     }
     @ViewBuilder private var toolbarBackground: some View {
         if model.settings.theme == .liquidGlass {
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: 14).fill(.clear).glassEffect(.regular,in: RoundedRectangle(cornerRadius: 14))
-            } else { RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial) }
-            #else
-            RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)
-            #endif
+            // The panel already supplies desktop frost and glass. A second adaptive
+            // glass pass here changed the apparent blur when the toolbar appeared.
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.2))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.18),lineWidth: 0.75))
         } else { RoundedRectangle(cornerRadius: 10).fill(.regularMaterial) }
     }
     private func icon(_ label: String, _ symbol: String, _ value: LineAction, enabled: Bool = true) -> some View {

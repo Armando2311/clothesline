@@ -147,21 +147,11 @@ final class PanelController: NSObject, LineViewDelegate {
     /// Put the interactive line inside native glass, preserving its responder and drag surface.
     private func refreshEnvironment() {
         let glass = model.settings.theme == .liquidGlass
+        panel.hasShadow = glass
         if glass && glassContainer == nil {
             let frame = panel.contentView?.frame ?? lineView.frame
             lineView.removeFromSuperview()
-            let container: NSView
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                let effect = NSGlassEffectView(frame: frame)
-                effect.style = .clear
-                effect.cornerRadius = 22
-                effect.contentView = lineView
-                container = effect
-            } else { container = makeFrostedContainer(frame: frame) }
-            #else
-            container = makeFrostedContainer(frame: frame)
-            #endif
+            let container = GlassBackdropView(content: lineView,frame: frame)
             lineView.autoresizingMask = [.width,.height]
             glassContainer = container
             panel.contentView = container
@@ -171,18 +161,6 @@ final class PanelController: NSObject, LineViewDelegate {
             glassContainer = nil
         }
         lineView.applyTheme()
-    }
-
-    private func makeFrostedContainer(frame: NSRect) -> NSVisualEffectView {
-        let effect = NSVisualEffectView(frame: frame)
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 22
-        effect.layer?.masksToBounds = true
-        effect.addSubview(lineView)
-        return effect
     }
 
     @objc private func screensChanged() {
