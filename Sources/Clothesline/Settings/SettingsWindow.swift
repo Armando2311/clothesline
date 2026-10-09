@@ -45,7 +45,9 @@ struct SettingsView: View {
             AboutSettings(model: model)
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 540)
+        // Grouped forms are scrollable and have no intrinsic height.
+        // Give the tab content a stable viewport instead of a collapsed strip.
+        .frame(width: 540, height: 520)
         .padding(20)
     }
 }

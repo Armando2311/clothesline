@@ -21,6 +21,10 @@ Native controller/responder tests cover vertical motion, losing key focus, expli
 
 The hover/theme follow-up adds native regressions for hidden initial controls, enter/exit transitions, keyboard search focus retaining the toolbar after pointer exit, Escape with active selection/search, theme persistence, and switching native glass without losing the interactive line. Live QA verified hidden first reveal, hover controls, Settings → Appearance theme selection, native clear glass, and Escape dismissal. The static preview cannot reproduce WindowServer backdrop sampling for native glass; its live appearance depends on the windows behind it.
 
+## Settings layout fix — 2026-10-09
+
+The native Settings window reproduced a 70-point content height: tab labels were visible but option forms were clipped. The tab view now has an explicit 520-point viewport plus padding. A native-window regression failed before the fix and passes afterward; the full suite has 91 passing tests and the Xcode Debug build succeeds.
+
 ## 1. Automated (runs on every push) — all passing
 
 Historical baseline green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.
