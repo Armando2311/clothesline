@@ -35,6 +35,13 @@ final class ItemActions: NSObject {
         if !fileItems.isEmpty {
             add(menu, "Show in Finder", #selector(revealSelected), key: "r", enabled: !reachable.isEmpty)
         }
+        add(menu, "Share…", #selector(shareSelected))
+        add(menu, "Export with Recipe…", #selector(exportSelected))
+        if let single {
+            add(menu, "Rename Label…", #selector(renameSelected))
+            if single.kind == .text { add(menu, "Edit Note…", #selector(editSelected)) }
+            if [.image, .screenshot].contains(single.kind) { add(menu, "Prepare Image…", #selector(prepareSelected), enabled: !reachable.isEmpty) }
+        }
         add(menu, "Copy", #selector(copySelected), key: "c")
         menu.addItem(.separator())
 
@@ -52,7 +59,7 @@ final class ItemActions: NSObject {
         if model.board.lines.count > 1 {
             let moveItem = NSMenuItem(title: "Move to Line", action: nil, keyEquivalent: "")
             let sub = NSMenu()
-            for line in model.board.lines where line.id != model.board.activeLineID {
+            for line in model.board.moveDestinations(for: items) {
                 let mi = NSMenuItem(title: line.name, action: #selector(moveToLine(_:)), keyEquivalent: "")
                 mi.target = self
                 mi.representedObject = line.id
@@ -133,6 +140,11 @@ final class ItemActions: NSObject {
     // MARK: - Menu actions
 
     @objc private func quickLook() { view?.toggleQuickLook() }
+    @objc private func shareSelected() { view?.workflow.share() }
+    @objc private func exportSelected() { view?.workflow.export() }
+    @objc private func renameSelected() { if let item = selected.first { view?.workflow.alias(item) } }
+    @objc private func editSelected() { if let item = selected.first { view?.workflow.note(item) } }
+    @objc private func prepareSelected() { if let item = selected.first { view?.workflow.prepare(item) } }
     @objc private func openSelected() { open(selected) }
     @objc private func revealSelected() { reveal(selected) }
     @objc private func copySelected() { _ = DragWriters.copyToPasteboard(selected, model: model) }
@@ -166,7 +178,7 @@ final class ItemActions: NSObject {
             case .link:
                 if let link = item.link, let url = URL(string: link) { NSWorkspace.shared.open(url) }
             case .text:
-                if let url = previewURL(for: item) { NSWorkspace.shared.open(url) }
+                view?.workflow.note(item)
             default:
                 if let url = model.url(for: item) { NSWorkspace.shared.open(url) } else { NSSound.beep() }
             }
@@ -220,6 +232,7 @@ final class ItemActions: NSObject {
     private func chooseFolder(prompt: String, message: String) -> URL? {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
+        panel.level = WorkflowPresentation.modalLevel
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -262,6 +275,7 @@ final class ItemActions: NSObject {
         let items = selected.filter { model.url(for: $0) != nil && $0.file?.ownership == .referenced }
         guard !items.isEmpty, let folder = chooseFolder(prompt: "Move Here", message: "The files will be moved out of their current folders.") else { return }
         let alert = NSAlert()
+        alert.window.level = WorkflowPresentation.modalLevel
         alert.messageText = items.count == 1 ? "Move “\(items[0].file?.fileName ?? items[0].title)” to “\(folder.lastPathComponent)”?" : "Move \(items.count) files to “\(folder.lastPathComponent)”?"
         alert.informativeText = "The files will no longer be in their current folders. They stay on the line at their new location."
         alert.addButton(withTitle: "Move")
@@ -286,6 +300,7 @@ final class ItemActions: NSObject {
         guard !items.isEmpty else { return }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
+        alert.window.level = WorkflowPresentation.modalLevel
         alert.alertStyle = .warning
         alert.messageText = items.count == 1 ? "Move “\(items[0].file?.fileName ?? items[0].title)” to the Trash?" : "Move \(items.count) files to the Trash?"
         alert.informativeText = "This moves the actual file\(items.count == 1 ? "" : "s") on your Mac to the Trash, not just the item on the line. You can put \(items.count == 1 ? "it" : "them") back from the Trash."
@@ -308,6 +323,7 @@ final class ItemActions: NSObject {
         guard let item = selected.first else { return }
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
+        panel.level = WorkflowPresentation.modalLevel
         panel.canChooseFiles = item.kind != .folder
         panel.canChooseDirectories = item.kind == .folder
         panel.message = "Find “\(item.file?.fileName ?? item.title)”"
@@ -320,6 +336,7 @@ final class ItemActions: NSObject {
     private func report(_ failures: [String], verb: String) {
         guard !failures.isEmpty else { return }
         let alert = NSAlert()
+        alert.window.level = WorkflowPresentation.modalLevel
         alert.messageText = "Some files couldn’t be \(verb)."
         alert.informativeText = failures.prefix(6).joined(separator: "\n")
         alert.runModal()
@@ -330,6 +347,7 @@ final class ItemActions: NSObject {
     @objc func addFiles() {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
+        panel.level = WorkflowPresentation.modalLevel
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
@@ -341,8 +359,7 @@ final class ItemActions: NSObject {
     }
 
     @objc func newNote() {
-        guard let text = TextPrompt.run(title: "New Note", message: "Write a note to hang on the line.", initial: "", multiline: true) else { return }
-        model.hang(text: text, source: .manual)
+        view?.workflow.note(nil)
     }
 
     @objc private func newLine() {
@@ -363,6 +380,7 @@ final class ItemActions: NSObject {
     @objc private func deleteLine() {
         let line = model.board.activeLine
         let alert = NSAlert()
+        alert.window.level = WorkflowPresentation.modalLevel
         alert.messageText = "Delete the line “\(line.name)”?"
         alert.informativeText = "Its items move to another line. No files are affected."
         alert.addButton(withTitle: "Delete Line")
@@ -378,6 +396,7 @@ enum TextPrompt {
     static func run(title: String, message: String, initial: String, multiline: Bool = false) -> String? {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
+        alert.window.level = WorkflowPresentation.modalLevel
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "OK")

@@ -63,6 +63,34 @@ with sample items to an image, and builds the XcodeGen project.
 `Clothesline --render-preview out.png` draws the real line view with sample content
 (all four themes plus the empty state) without opening a window.
 
+## Workflow tools
+
+The control bar exposes line switching, search, collection browsing, Preview, Copy,
+Share, Prepare Image and Export. Search with **⌘F** across every line, including note
+contents, URLs and text recognized locally in screenshots and images. OCR starts when
+search is used; new matches appear as recognition completes.
+
+Choose **Settings → Appearance → Compact** for upright cards with less decoration.
+The expanded collection browser supports multiple selection (⌘-click), Quick Look,
+copy-by-default multi-item dragging, editable notes and labels that leave filenames intact.
+
+**Prepare Image** offers cropping, arrows, numbered steps, opaque redaction, undo,
+resize, PNG/JPEG output, and an optional JPEG size limit. Copy, hang or save a flattened
+result; the original is never overwritten. Cropping preserves existing annotations.
+
+**Export** includes three configurable recipes:
+
+* **Client Handoff:** resize and number JPEG copies, collect other attachments, include
+  notes and links in `Report.md`, then create a ZIP or folder.
+* **Bug Report:** preserve attachments and add reproduction steps, expected/actual results,
+  notes and links to a Markdown report. Copy the report after exporting.
+* **Product Listing:** resize, optionally center-crop and number image copies.
+
+Recipe settings and the chosen destination are remembered locally. Exports use new names
+instead of overwriting existing files. A selected folder cannot be exported into itself or
+its descendants. Cancellation discards the staged package. Hosted sharing, sync, billing,
+and automatic clipboard history are not included.
+
 ## Using Clothesline
 
 | | |
@@ -76,7 +104,7 @@ with sample items to an image, and builds the XcodeGen project.
 | Pin | P. A painted clothespin means the item survives cleanups |
 | Rearrange | Drag an item along the line |
 | Lines | ⇥ / ⌘1–9 switch lines. Right-click the rope for New Line, Arrange By, Clear… |
-| Hide | Esc, ⌘W, the shortcut again, or click anywhere else |
+| Hide | Esc, ⌘W, the shortcut again, or EXIT in the hover toolbar |
 
 ### What happens to your files
 
@@ -115,3 +143,17 @@ with sample items to an image, and builds the XcodeGen project.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions,
 [docs/TESTING.md](docs/TESTING.md) for what has been verified and what still needs manual
 testing, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
+### Smaller, persistent clothesline
+
+The illustrated line is now 210 points high (Compact: 190), with larger dark card labels and a shallower rope. Clicks in Finder or another app leave it open while you pick up files. Close it with Escape, Control–Option–C (or your configured toggle shortcut), or EXIT at the right of the hover toolbar. Drag the up/down grip at the toolbar's left to uncover files behind it; the position is saved per display and constrained to the visible desktop.
+
+Search uses gentle filtering without deletion effects. Compact thumbnails retain their aspect ratio at Retina scale. OCR is debounced, runs off the UI thread, and caches results locally across launches. JPEG exports explicitly composite transparency over white. Save Result allows replacing an existing derivative after native confirmation, while protecting the source image, symlinks and hardlinks. Collection browsing supports arrow keys, Space preview, Delete/undo and Command–A/C/F.
+
+### Hover toolbar and new themes
+
+The toolbar stays hidden until the pointer enters the line, then fades and slides into view in 180 ms. Click the **pin** button next to Settings to keep it visible when the pointer leaves; click again to restore hover behavior. The preference survives closing and relaunching. It stays available during keyboard search and open menus. Escape, the configured toggle, and the larger **EXIT** button close the line. The gear button opens Settings; Command–comma also opens Settings from the line.
+
+Choose **Sakura Morning**, **Ocean Breeze**, **Lavender Twilight**, or **Liquid Glass** under Settings → Appearance → Themes. Liquid Glass uses a persistent native frosted backdrop with a clear glass finish on Xcode 26/macOS 26, and the same frosted foundation on older supported builds. Its active backdrop stays consistent when selecting files, revealing controls or moving focus to another app. Subtle edge lighting and a floating shadow add depth without obscuring the cards. Cards retain contrasting paper backgrounds. Reduce Motion replaces the slide with a simple fade.
+
+Choose **No Theme** in Settings → Appearance to float only the rope and files over the desktop or any app, with no panel backdrop in either Illustrated or Compact mode. The toolbar floats on its own translucent surface.

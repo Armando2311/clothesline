@@ -12,7 +12,7 @@ import ClotheslineCore
 final class PanelController: NSObject, LineViewDelegate {
     enum Reveal {
         case explicit    // shortcut or menu: interactive, takes key focus
-        case peek        // new screenshot: brief, no focus, auto-hides
+        case peek        // new screenshot: no focus, remains available until closed
         case dragTarget  // a drag reached the top edge: stays while dragging
     }
 
@@ -21,15 +21,15 @@ final class PanelController: NSObject, LineViewDelegate {
     let lineView: LineView
     private(set) var isVisible = false
     private var reveal: Reveal = .explicit
-    private let autoHide = Delayed()
-    private var clickMonitor: Any?
+    private var escapeMonitor: Any?
+    private var glassContainer: NSView?
     private var dragMonitor: Any?
     private var mouseDownMonitor: Any?
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
-    private var mouseInside = false
     private var currentScreen: NSScreen?
 
-    static let panelHeight: CGFloat = 252
+    private var verticalOffsets: [String: Double] = UserDefaults.standard.dictionary(forKey: "panel.verticalOffsets") as? [String: Double] ?? [:]
+    static let panelHeight: CGFloat = 210
 
     init(model: AppModel) {
         self.model = model
@@ -42,16 +42,28 @@ final class PanelController: NSObject, LineViewDelegate {
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
         installDragEdgeMonitor()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            let windowNumber = event.windowNumber
+            let consumed = MainActor.assumeIsolated {
+                guard let self, self.isVisible, keyCode == 53, windowNumber == self.panel.windowNumber else { return false }
+                self.hide()
+                return true
+            }
+            return consumed ? nil : event
+        }
     }
+
+    deinit { if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) } }
 
     // MARK: - Show / hide
 
     func toggle() {
-        if isVisible && reveal == .explicit { hide() } else { show(.explicit) }
+        if isVisible { hide() } else { show(.explicit) }
     }
 
     func show(_ how: Reveal) {
-        autoHide.cancel()
+        refreshEnvironment()
         let screen = targetScreen()
         let wasVisible = isVisible
         if !wasVisible || screen != currentScreen { place(on: screen) }
@@ -62,7 +74,6 @@ final class PanelController: NSObject, LineViewDelegate {
             panel.orderFrontRegardless()
             isVisible = true
             lineView.willAppear(animated: true)
-            installClickOutsideMonitor()
             model.revalidate()
             screenshotRefresh?()
         } else if how == .explicit {
@@ -71,8 +82,6 @@ final class PanelController: NSObject, LineViewDelegate {
         if how == .explicit {
             panel.makeKey()
             panel.makeFirstResponder(lineView)
-        } else if how == .peek {
-            scheduleAutoHide(after: 2.8)
         }
     }
 
@@ -81,9 +90,7 @@ final class PanelController: NSObject, LineViewDelegate {
 
     func hide() {
         guard isVisible else { return }
-        autoHide.cancel()
         isVisible = false
-        removeClickOutsideMonitor()
         if QLPreviewPanel_isVisible() { QLPreviewPanel_close() }
         let duration = lineView.animateDisappear()
         lineView.willDisappear()
@@ -99,19 +106,6 @@ final class PanelController: NSObject, LineViewDelegate {
                 self.lineView.resetAfterDisappear()
             }
         })
-    }
-
-    private func scheduleAutoHide(after delay: TimeInterval) {
-        guard reveal != .explicit else { return }
-        autoHide.schedule(after: delay) { [weak self] in
-            guard let self, self.reveal != .explicit else { return }
-            if self.mouseInside {
-                // Wait until the pointer leaves.
-                self.scheduleAutoHide(after: 1.0)
-            } else {
-                self.hide()
-            }
-        }
     }
 
     // MARK: - Placement
@@ -139,10 +133,34 @@ final class PanelController: NSObject, LineViewDelegate {
         let safeTop: Double
         if #available(macOS 12.0, *) { safeTop = Double(screen.safeAreaInsets.top) } else { safeTop = 0 }
         let placement = PanelPlacement(screenFrame: screen.frame, visibleFrame: screen.visibleFrame, safeAreaTop: safeTop,
-                                       notchRect: notch, height: Double(Self.panelHeight))
+                                       notchRect: notch, height: model.settings.appearanceStyle.panelHeight, verticalOffset: verticalOffsets[displayKey(screen)] ?? 0)
         panel.setFrame(placement.frame, display: false)
         lineView.frame = NSRect(origin: .zero, size: placement.frame.size)
         lineView.configure(notchCenterX: placement.notchCenterX)
+    }
+
+    func refreshLayout() {
+        refreshEnvironment()
+        if isVisible { place(on: currentScreen ?? targetScreen()) }
+    }
+
+    /// Put the interactive line inside native glass, preserving its responder and drag surface.
+    private func refreshEnvironment() {
+        let glass = model.settings.theme == .liquidGlass
+        panel.hasShadow = glass
+        if glass && glassContainer == nil {
+            let frame = panel.contentView?.frame ?? lineView.frame
+            lineView.removeFromSuperview()
+            let container = GlassBackdropView(content: lineView,frame: frame)
+            lineView.autoresizingMask = [.width,.height]
+            glassContainer = container
+            panel.contentView = container
+        } else if !glass && glassContainer != nil {
+            lineView.removeFromSuperview()
+            panel.contentView = lineView
+            glassContainer = nil
+        }
+        lineView.applyTheme()
     }
 
     @objc private func screensChanged() {
@@ -152,27 +170,22 @@ final class PanelController: NSObject, LineViewDelegate {
     }
 
     @objc private func panelResignedKey() {
-        // Another app took focus; if the user clicked elsewhere the click
-        // monitor hides the line. Nothing else to do.
+        // Picking up a file in another app deliberately leaves this destination visible.
     }
 
-    // MARK: - Click outside
-
-    private func installClickOutsideMonitor() {
-        guard clickMonitor == nil else { return }
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.isVisible, self.model.settings.hideWhenClickingOutside else { return }
-                // Global monitors only see clicks in *other* apps, so this is a
-                // click outside the line by definition.
-                self.hide()
-            }
-        }
+    private func displayKey(_ screen: NSScreen) -> String {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? "main"
     }
 
-    private func removeClickOutsideMonitor() {
-        if let m = clickMonitor { NSEvent.removeMonitor(m) }
-        clickMonitor = nil
+    func lineViewRequestsVerticalMove(_ view: LineView, delta: CGFloat) {
+        guard isVisible, let screen = currentScreen else { return }
+        reveal = .explicit
+        let key = displayKey(screen)
+        let top = min(screen.visibleFrame.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
+        let maximum = max(0, top - panel.frame.height - screen.visibleFrame.minY)
+        verticalOffsets[key] = min(maximum, max(0, (top - panel.frame.maxY) - delta))
+        UserDefaults.standard.set(verticalOffsets, forKey: "panel.verticalOffsets")
+        place(on: screen)
     }
 
     // MARK: - Drag to the top edge
@@ -194,7 +207,6 @@ final class PanelController: NSObject, LineViewDelegate {
 
     private func handleGlobalDrag(_ event: NSEvent) {
         if event.type == .leftMouseUp {
-            if isVisible && reveal == .dragTarget { scheduleAutoHide(after: 0.6) }
             return
         }
         guard model.settings.revealOnDragToTopEdge, !isVisible else { return }
@@ -210,44 +222,14 @@ final class PanelController: NSObject, LineViewDelegate {
 
     func lineViewRequestsHide(_ view: LineView) { hide() }
 
-    func lineViewDidInteract(_ view: LineView) {
-        mouseInside = true
-        if reveal != .explicit {
-            // Interacting with a peeked line keeps it open until the pointer leaves.
-            autoHide.cancel()
-            scheduleAutoHide(after: 1.6)
-        }
-        trackMouseExit()
-    }
-
-    func lineViewDragDidExit(_ view: LineView) {
-        mouseInside = false
-        if reveal == .dragTarget { scheduleAutoHide(after: 0.9) }
-    }
-
-    func lineViewDidAcceptDrop(_ view: LineView) {
-        if reveal == .dragTarget { scheduleAutoHide(after: 1.4) }
-    }
-
+    func lineViewDidInteract(_ view: LineView) { reveal = .explicit }
+    func lineViewDragDidExit(_ view: LineView) {}
+    func lineViewDidAcceptDrop(_ view: LineView) { reveal = .explicit }
     func lineViewRequestsKeyFocus(_ view: LineView) {
-        if reveal != .explicit {
-            reveal = .explicit
-            autoHide.cancel()
-        }
+        reveal = .explicit
         panel.makeKey()
     }
 
-    private var exitCheck = Delayed()
-
-    /// Lightweight pointer-exit detection while peeking: a check every half
-    /// second, only while a peeked line is visible and under the pointer.
-    private func trackMouseExit() {
-        exitCheck.schedule(after: 0.5) { [weak self] in
-            guard let self, self.isVisible else { return }
-            self.mouseInside = NSMouseInRect(NSEvent.mouseLocation, self.panel.frame, false)
-            if self.mouseInside && self.reveal != .explicit { self.trackMouseExit() }
-        }
-    }
 }
 
 @MainActor private func QLPreviewPanel_isVisible() -> Bool {

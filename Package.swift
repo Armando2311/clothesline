@@ -46,6 +46,7 @@ targets.append(
         ]
     )
 )
+targets.append(.testTarget(name: "ClotheslineTests", dependencies: ["Clothesline", "ClotheslineCore"], path: "Tests/ClotheslineTests"))
 #endif
 
 let package = Package(

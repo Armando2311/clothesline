@@ -37,6 +37,12 @@ public struct Board: Codable, Equatable, Sendable {
         items.filter { $0.lineID == lineID }
     }
 
+    /// Include a destination if at least one selected item would actually move.
+    public func moveDestinations(for selected: [HangingItem]) -> [Line] {
+        guard !selected.isEmpty else { return [] }
+        return lines.filter { line in selected.contains { $0.lineID != line.id } }
+    }
+
     public var activeItems: [HangingItem] { items(on: activeLineID) }
 
     public func item(_ id: UUID) -> HangingItem? {
@@ -107,6 +113,13 @@ public struct Board: Codable, Equatable, Sendable {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         items[i].title = trimmed
+    }
+
+    public mutating func editNote(_ id: UUID, text: String) {
+        guard let i = items.firstIndex(where: { $0.id == id && $0.kind == .text }),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        items[i].text = text
+        items[i].title = ItemClassifier.title(forText: text)
     }
 
     public mutating func updateFile(_ id: UUID, _ file: FileReference) {
