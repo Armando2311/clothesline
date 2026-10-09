@@ -110,6 +110,7 @@ final class LineView: NSView {
         model.$settings.removeDuplicates { a,b in
             a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.ambientEffects == b.ambientEffects && a.gentleBreeze == b.gentleBreeze
         }.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme() }.store(in: &cancellables)
+        model.$settings.map(\.keepToolbarVisible).removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshToolbarVisibility() }.store(in: &cancellables)
         registerForDraggedTypes(PasteboardImporter.acceptedTypes)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Clothesline")
@@ -190,8 +191,9 @@ final class LineView: NSView {
         renderedAppearanceStyle = model.settings.appearanceStyle
         theme = resolved
         let compact = model.settings.appearanceStyle == .compact
-        sky.isHidden = compact || theme.id == .liquidGlass
-        layer?.backgroundColor = compact && theme.id != .liquidGlass ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
+        let transparent = theme.id == .liquidGlass || theme.id == .noTheme
+        sky.isHidden = compact || transparent
+        layer?.backgroundColor = compact && !transparent ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         ropeBase.strokeColor = theme.rope.cgColor
@@ -257,7 +259,7 @@ final class LineView: NSView {
         pointerInside = false
         controlsFocused = false
         menuTracking = false
-        setToolbarVisible(false,animated: false)
+        setToolbarVisible(model.settings.keepToolbarVisible,animated: false)
         applyTheme()
         relayout(animated: false)
         updateAmbient()
@@ -815,7 +817,7 @@ final class LineView: NSView {
         refreshToolbarVisibility()
     }
     private func refreshToolbarVisibility() {
-        setToolbarVisible(isOnScreen && (pointerInside || controlsFocused || menuTracking),animated: true)
+        setToolbarVisible(isOnScreen && (model.settings.keepToolbarVisible || pointerInside || controlsFocused || menuTracking),animated: true)
     }
     func setToolbarVisible(_ visible: Bool, animated: Bool) {
         guard let controls else { return }

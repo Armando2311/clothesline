@@ -70,6 +70,7 @@ struct Theme: Equatable {
         case .oceanBreeze: return .oceanBreeze
         case .lavenderTwilight: return .lavenderTwilight
         case .liquidGlass: return .liquidGlass
+        case .noTheme: return .noTheme
         }
     }
 
@@ -168,6 +169,13 @@ struct Theme: Equatable {
         t.hook = NSColor(hex: 0x778D9F); t.woodLight = NSColor(hex: 0xE6F1FC); t.woodDark = NSColor(hex: 0x91A6BB)
         t.paintedPin = NSColor(hex: 0x9DB9F7); t.accent = NSColor(hex: 0x3375D7)
         t.ambient = .none; t.shadowOpacity = 0.18
+        return t
+    }()
+
+    static let noTheme: Theme = {
+        var t = summerAfternoon
+        t.id = .noTheme
+        t.ambient = .none
         return t
     }()
 

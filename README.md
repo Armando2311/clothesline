@@ -152,6 +152,8 @@ Search uses gentle filtering without deletion effects. Compact thumbnails retain
 
 ### Hover toolbar and new themes
 
-The toolbar stays hidden until the pointer enters the line, then fades and slides into view in 180 ms. It stays available during keyboard search and open menus. Escape, the configured toggle, and the larger **EXIT** button close the line. The gear button opens Settings; Command–comma also opens Settings from the line.
+The toolbar stays hidden until the pointer enters the line, then fades and slides into view in 180 ms. Click the **pin** button next to Settings to keep it visible when the pointer leaves; click again to restore hover behavior. The preference survives closing and relaunching. It stays available during keyboard search and open menus. Escape, the configured toggle, and the larger **EXIT** button close the line. The gear button opens Settings; Command–comma also opens Settings from the line.
 
 Choose **Sakura Morning**, **Ocean Breeze**, **Lavender Twilight**, or **Liquid Glass** under Settings → Appearance → Themes. Liquid Glass uses a persistent native frosted backdrop with a clear glass finish on Xcode 26/macOS 26, and the same frosted foundation on older supported builds. Its active backdrop stays consistent when selecting files, revealing controls or moving focus to another app. Subtle edge lighting and a floating shadow add depth without obscuring the cards. Cards retain contrasting paper backgrounds. Reduce Motion replaces the slide with a simple fade.
+
+Choose **No Theme** in Settings → Appearance to float only the rope and files over the desktop or any app, with no panel backdrop in either Illustrated or Compact mode. The toolbar floats on its own translucent surface.

@@ -95,4 +95,65 @@ final class HoverThemeTests: XCTestCase {
             XCTAssertEqual(try JSONDecoder().decode(ThemeChoice.self,from: JSONEncoder().encode(choice)),choice)
         }
     }
+    @MainActor func testPinnedToolbarSurvivesPointerExitAndReopening() throws {
+        let defaults = UserDefaults.standard
+        let saved = defaults.data(forKey: "settings.v1")
+        defer { if let saved { defaults.set(saved,forKey: "settings.v1") } else { defaults.removeObject(forKey: "settings.v1") } }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel(store: BoardStore(directory: root))
+        model.settings = try JSONDecoder().decode(AppSettings.self,from: Data(#"{"keepToolbarVisible":true}"#.utf8))
+        let view = LineView(model: model)
+        view.willAppear(animated: false)
+        XCTAssertTrue(view.toolbarVisible)
+        let exit = NSEvent.enterExitEvent(with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
+        view.mouseExited(with: exit)
+        XCTAssertTrue(view.toolbarVisible)
+        view.willDisappear()
+        XCTAssertFalse(view.toolbarVisible)
+        view.willAppear(animated: false)
+        XCTAssertTrue(view.toolbarVisible)
+        model.settings = AppSettings()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.35))
+        XCTAssertFalse(view.toolbarVisible)
+        view.willDisappear()
+    }
+
+    func testToolbarPinSettingRoundTripsAndDefaultsOff() throws {
+        for value in [true,false] {
+            let settings = try JSONDecoder().decode(AppSettings.self,from: Data("{\"keepToolbarVisible\":\(value)}".utf8))
+            let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String:Any]
+            XCTAssertEqual(encoded["keepToolbarVisible"] as? Bool,value)
+        }
+        let legacy = try JSONDecoder().decode(AppSettings.self,from: Data("{}".utf8))
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as! [String:Any]
+        XCTAssertEqual(encoded["keepToolbarVisible"] as? Bool,false)
+    }
+
+    @MainActor func testNoThemeHasNoBackdropInEitherStyle() throws {
+        let choice = try XCTUnwrap(ThemeChoice(rawValue: "noTheme"))
+        let defaults = UserDefaults.standard
+        let saved = defaults.data(forKey: "settings.v1")
+        defer { if let saved { defaults.set(saved,forKey: "settings.v1") } else { defaults.removeObject(forKey: "settings.v1") } }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel(store: BoardStore(directory: root))
+        model.settings.theme = .liquidGlass
+        let controller = PanelController(model: model)
+        controller.show(.explicit)
+        model.settings.theme = choice
+        for style in [AppearanceStyle.illustrated,.compact] {
+            model.settings.appearanceStyle = style
+            controller.refreshLayout()
+            XCTAssertTrue(controller.panel.contentView === controller.lineView)
+            XCTAssertFalse(controller.panel.isOpaque)
+            XCTAssertFalse(controller.panel.hasShadow)
+            XCTAssertNil(controller.lineView.layer?.backgroundColor)
+            let sky = try XCTUnwrap(controller.lineView.layer?.sublayers?.compactMap { $0 as? SkyLayer }.first)
+            XCTAssertTrue(sky.isHidden)
+        }
+        controller.hide()
+        controller.panel.orderOut(nil)
+    }
+
 }

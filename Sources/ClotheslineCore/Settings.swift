@@ -52,6 +52,7 @@ public enum ThemeChoice: String, Codable, CaseIterable, Sendable {
     case oceanBreeze
     case lavenderTwilight
     case liquidGlass
+    case noTheme
 
     public var displayName: String {
         switch self {
@@ -64,6 +65,7 @@ public enum ThemeChoice: String, Codable, CaseIterable, Sendable {
         case .oceanBreeze: return "Ocean Breeze"
         case .lavenderTwilight: return "Lavender Twilight"
         case .liquidGlass: return "Liquid Glass"
+        case .noTheme: return "No Theme"
         }
     }
 }
@@ -107,6 +109,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     // Appearance & motion
     public var appearanceStyle: AppearanceStyle = .illustrated
     public var theme: ThemeChoice = .automatic
+    public var keepToolbarVisible: Bool = false
     public var ambientEffects: Bool = true
     public var gentleBreeze: Bool = true
     public var playSounds: Bool = false
@@ -119,7 +122,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case toggleShortcut, hangClipboardShortcut, showMenuBarIcon, hideWhenClickingOutside, revealOnDragToTopEdge
         case collectScreenshots, revealOnScreenshot, includeScreenRecordings, customScreenshotFolder, customScreenshotFolderBookmark, screenshotLineID
-        case afterDragOut, appearanceStyle, theme, ambientEffects, gentleBreeze, playSounds, retention
+        case afterDragOut, appearanceStyle, theme, keepToolbarVisible, ambientEffects, gentleBreeze, playSounds, retention
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,6 +143,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         afterDragOut = (try? c.decodeIfPresent(AfterDragOut.self, forKey: .afterDragOut)) ?? d.afterDragOut
         appearanceStyle = (try? c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle)) ?? d.appearanceStyle
         theme = (try? c.decodeIfPresent(ThemeChoice.self, forKey: .theme)) ?? d.theme
+        keepToolbarVisible = (try? c.decodeIfPresent(Bool.self, forKey: .keepToolbarVisible)) ?? d.keepToolbarVisible
         ambientEffects = (try? c.decodeIfPresent(Bool.self, forKey: .ambientEffects)) ?? d.ambientEffects
         gentleBreeze = (try? c.decodeIfPresent(Bool.self, forKey: .gentleBreeze)) ?? d.gentleBreeze
         playSounds = (try? c.decodeIfPresent(Bool.self, forKey: .playSounds)) ?? d.playSounds
@@ -163,6 +167,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try c.encode(afterDragOut, forKey: .afterDragOut)
         try c.encode(appearanceStyle, forKey: .appearanceStyle)
         try c.encode(theme, forKey: .theme)
+        try c.encode(keepToolbarVisible, forKey: .keepToolbarVisible)
         try c.encode(ambientEffects, forKey: .ambientEffects)
         try c.encode(gentleBreeze, forKey: .gentleBreeze)
         try c.encode(playSounds, forKey: .playSounds)

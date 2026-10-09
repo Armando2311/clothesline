@@ -29,6 +29,10 @@ The native Settings window reproduced a 70-point content height: tab labels were
 
 The full suite has 92 passing tests and the Xcode Debug build succeeds. A regression failed before adding independent behind-window frosting; it now pins the backdrop identity, `.popover` material, `.active` state and non-emphasized appearance through selection, toolbar visibility, key-window loss and layout refresh. The outer glass wrapper forwards full-panel pointer tracking, including drag events. The toolbar no longer adds an adaptive glass pass. Native sample checks compared the surface before/after selection and with keyboard-search controls visible. Window captures show the finish and its stable tint; exact optical blur over arbitrary desktop content is not pixel-measured by this test.
 
+## Floating theme and toolbar pin — 2026-10-09
+
+The full suite has 95 passing tests and the Xcode Debug build succeeds. Live app checks confirmed No Theme in Settings, the accessible pin toggle changing off/on, EXIT closing while pinned, and the toolbar staying visible when reopened with Control–Option–C. The rendered theme preview includes No Theme. Three new regressions were observed failing before implementation: No Theme was unavailable, a pinned toolbar disappeared after pointer exit/reopening, and its preference was not persisted. The passing tests cover switching from native glass to a transparent panel in both Illustrated and Compact modes, pin/unpin while open, reopening, and decoding older settings with the pin off by default.
+
 ## 1. Automated (runs on every push) — all passing
 
 Historical baseline green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.

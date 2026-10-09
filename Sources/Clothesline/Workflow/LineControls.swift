@@ -38,6 +38,12 @@ struct LineControls: View {
             icon("New note", "square.and.pencil", .note)
             if searchTarget == "rope" {
                 Divider().frame(height: 20)
+                Toggle(isOn: $model.settings.keepToolbarVisible) {
+                    Image(systemName: model.settings.keepToolbarVisible ? "pin.fill" : "pin").frame(width: 18)
+                }
+                .toggleStyle(.button)
+                .help(model.settings.keepToolbarVisible ? "Unpin toolbar — hide when the pointer leaves" : "Pin toolbar — keep controls visible")
+                .accessibilityLabel("Keep toolbar visible")
                 icon("Settings", "gearshape.fill", .settings)
                 Button("EXIT") { action(.close,anchor) }
                     .font(.system(size: 13,weight: .bold,design: .rounded))
@@ -58,7 +64,10 @@ struct LineControls: View {
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color(nsColor: .windowBackgroundColor).opacity(0.2))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.18),lineWidth: 0.75))
-        } else { RoundedRectangle(cornerRadius: 10).fill(.regularMaterial) }
+        } else {
+            RoundedRectangle(cornerRadius: 10).fill(.regularMaterial)
+                .shadow(color: .black.opacity(model.settings.theme == .noTheme ? 0.2 : 0),radius: 7,y: 3)
+        }
     }
     private func icon(_ label: String, _ symbol: String, _ value: LineAction, enabled: Bool = true) -> some View {
         Button { action(value,anchor) } label: { Image(systemName: symbol).frame(width: 18) }
