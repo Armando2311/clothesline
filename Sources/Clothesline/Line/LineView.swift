@@ -26,6 +26,11 @@ final class LineView: NSView {
     let model: AppModel
     lazy var workflow = WorkflowActions(model: model, view: self)
     private var controls: NSHostingView<LineControls>?
+    private(set) var toolbarVisible = false
+    private var pointerInside = false
+    private var controlsFocused = false
+    private var menuTracking = false
+    private var toolbarTransition = 0
     lazy var actions = ItemActions(model: model, view: self)
 
     // Layers
@@ -85,12 +90,20 @@ final class LineView: NSView {
             guard let self else { return }
             self.delegate?.lineViewRequestsKeyFocus(self)
             self.workflow.perform(action, from: anchor)
+        }, focusChanged: { [weak self] focused in
+            self?.controlsFocused = focused
+            self?.refreshToolbarVisibility()
         }, verticalMove: { [weak self] delta in
             guard let self else { return }
             self.delegate?.lineViewRequestsVerticalMove(self, delta: delta)
         }))
         self.controls = controls
+        controls.wantsLayer = true
+        controls.isHidden = true
+        controls.alphaValue = 0
         addSubview(controls)
+        NotificationCenter.default.addObserver(self,selector: #selector(menuBegan),name: NSMenu.didBeginTrackingNotification,object: nil)
+        NotificationCenter.default.addObserver(self,selector: #selector(menuEnded),name: NSMenu.didEndTrackingNotification,object: nil)
         model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$recognizedText.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$selectedIDs.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelectionAppearance() }.store(in: &cancellables)
@@ -177,8 +190,8 @@ final class LineView: NSView {
         renderedAppearanceStyle = model.settings.appearanceStyle
         theme = resolved
         let compact = model.settings.appearanceStyle == .compact
-        sky.isHidden = compact
-        layer?.backgroundColor = compact ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
+        sky.isHidden = compact || theme.id == .liquidGlass
+        layer?.backgroundColor = compact && theme.id != .liquidGlass ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         ropeBase.strokeColor = theme.rope.cgColor
@@ -241,6 +254,10 @@ final class LineView: NSView {
 
     func willAppear(animated: Bool) {
         isOnScreen = true
+        pointerInside = false
+        controlsFocused = false
+        menuTracking = false
+        setToolbarVisible(false,animated: false)
         applyTheme()
         relayout(animated: false)
         updateAmbient()
@@ -283,6 +300,10 @@ final class LineView: NSView {
 
     func willDisappear() {
         isOnScreen = false
+        pointerInside = false
+        controlsFocused = false
+        menuTracking = false
+        setToolbarVisible(false,animated: false)
         hoveredID = nil
         sky.setAmbientRunning(false)
         itemLayers.values.forEach { $0.removeAnimation(forKey: "breeze") }
@@ -766,17 +787,70 @@ final class LineView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        pointerInside = true
+        refreshToolbarVisibility()
         let p = convert(event.locationInWindow, from: nil)
         hoveredID = itemID(at: p)
         delegate?.lineViewDidInteract(self)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        pointerInside = true
+        refreshToolbarVisibility()
         delegate?.lineViewDidInteract(self)
     }
 
     override func mouseExited(with event: NSEvent) {
+        pointerInside = false
+        refreshToolbarVisibility()
         hoveredID = nil
+    }
+
+    @objc private func menuBegan() {
+        guard toolbarVisible else { return }
+        menuTracking = true
+    }
+    @objc private func menuEnded() {
+        menuTracking = false
+        refreshToolbarVisibility()
+    }
+    private func refreshToolbarVisibility() {
+        setToolbarVisible(isOnScreen && (pointerInside || controlsFocused || menuTracking),animated: true)
+    }
+    func setToolbarVisible(_ visible: Bool, animated: Bool) {
+        guard let controls else { return }
+        guard visible != toolbarVisible || !animated else { return }
+        toolbarVisible = visible
+        toolbarTransition += 1
+        let transition = toolbarTransition
+        let currentSlide = controls.layer?.presentation()?.transform.m42
+        controls.layer?.removeAnimation(forKey: "toolbarSlide")
+        let duration = animated ? (Motion.reduced ? 0.1 : 0.18) : 0
+        if visible { controls.isHidden = false }
+        if duration == 0 {
+            controls.alphaValue = visible ? 1 : 0
+            controls.isHidden = !visible
+        } else {
+            if !Motion.reduced, let layer = controls.layer {
+                let slide = CABasicAnimation(keyPath: "transform.translation.y")
+                slide.fromValue = currentSlide ?? (visible ? 8 : 0)
+                slide.toValue = visible ? 0 : 8
+                slide.duration = duration
+                slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.2,0.8,0.2,1)
+                layer.add(slide,forKey: "toolbarSlide")
+            }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2,0.8,0.2,1)
+                controls.animator().alphaValue = visible ? 1 : 0
+            },completionHandler: { [weak self,weak controls] in
+                MainActor.assumeIsolated {
+                    guard let self, self.toolbarTransition == transition else { return }
+                    controls?.isHidden = !visible
+                }
+            })
+        }
+        updateAccessibilityChildren()
     }
 
     private func hoverChanged(from old: UUID?) {
@@ -906,13 +980,7 @@ final class LineView: NSView {
         case 49: toggleQuickLook()                                    // space
         case 51, 117: actions.removeFromLine(selectedItems)           // ⌫ ⌦
         case 36, 76: actions.open(selectedItems)                      // ↩
-        case 53:                                                      // ⎋
-            if model.isSearching { model.query = ""; return }
-            if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
-                QLPreviewPanel.shared().orderOut(nil)
-            } else if !selection.isEmpty {
-                selection = []
-            }
+        case 53: delegate?.lineViewRequestsHide(self)                  // ⎋
         case 48: model.cycleLine(by: flags.contains(.shift) ? -1 : 1) // ⇥
         default:
             if event.charactersIgnoringModifiers?.lowercased() == "p", !selection.isEmpty {
@@ -933,13 +1001,13 @@ final class LineView: NSView {
         let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
         let shift = event.modifierFlags.contains(.shift)
         switch chars {
+        case ",": workflow.perform(.settings); return true
         case "f": focusSearch(); return true
         case "a": selection = Set(orderedIDs); return true
         case "c": if !selection.isEmpty { _ = DragWriters.copyToPasteboard(selectedItems, model: model) }; return true
         case "v": PasteboardImporter.importContents(of: .general, into: model, source: .clipboard); return true
         case "z": if !shift { model.undoLastRemoval() }; return true
         case "w": delegate?.lineViewRequestsHide(self); return true
-        case ",": SettingsWindowController.shared.show(model: model); return true
         case "o": actions.open(selectedItems); return true
         case "r": actions.reveal(selectedItems); return true
         case "y": toggleQuickLook(); return true
@@ -975,6 +1043,7 @@ final class LineView: NSView {
     }
 
     func focusSearch() {
+        setToolbarVisible(true,animated: false)
         delegate?.lineViewRequestsKeyFocus(self)
         NotificationCenter.default.post(name: .clotheslineSearch, object: nil)
     }
@@ -1132,7 +1201,7 @@ final class LineView: NSView {
             e.setAccessibilitySelected(selection.contains(id))
             return e
         }
-        setAccessibilityChildren(accessibilityItems + (controls.map { [$0 as Any] } ?? []))
+        setAccessibilityChildren(accessibilityItems + (toolbarVisible ? (controls.map { [$0 as Any] } ?? []) : []))
     }
 
     fileprivate func accessibilityPress(_ id: UUID) {

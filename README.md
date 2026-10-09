@@ -104,7 +104,7 @@ and automatic clipboard history are not included.
 | Pin | P. A painted clothespin means the item survives cleanups |
 | Rearrange | Drag an item along the line |
 | Lines | ⇥ / ⌘1–9 switch lines. Right-click the rope for New Line, Arrange By, Clear… |
-| Hide | Esc, ⌘W, the shortcut again, or click anywhere else |
+| Hide | Esc, ⌘W, the shortcut again, or EXIT in the hover toolbar |
 
 ### What happens to your files
 
@@ -146,6 +146,12 @@ testing, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
 
 ### Smaller, persistent clothesline
 
-The illustrated line is now 210 points high (Compact: 190), with larger dark card labels and a shallower rope. Clicks in Finder or another app leave it open while you pick up files. Close it with Control–Option–C (or your configured toggle shortcut) or the close button at the right of the bottom toolbar. Drag the up/down grip at the toolbar's left to uncover files behind it; the position is saved per display and constrained to the visible desktop.
+The illustrated line is now 210 points high (Compact: 190), with larger dark card labels and a shallower rope. Clicks in Finder or another app leave it open while you pick up files. Close it with Escape, Control–Option–C (or your configured toggle shortcut), or EXIT at the right of the hover toolbar. Drag the up/down grip at the toolbar's left to uncover files behind it; the position is saved per display and constrained to the visible desktop.
 
 Search uses gentle filtering without deletion effects. Compact thumbnails retain their aspect ratio at Retina scale. OCR is debounced, runs off the UI thread, and caches results locally across launches. JPEG exports explicitly composite transparency over white. Save Result allows replacing an existing derivative after native confirmation, while protecting the source image, symlinks and hardlinks. Collection browsing supports arrow keys, Space preview, Delete/undo and Command–A/C/F.
+
+### Hover toolbar and new themes
+
+The toolbar stays hidden until the pointer enters the line, then fades and slides into view in 180 ms. It stays available during keyboard search and open menus. Escape, the configured toggle, and the larger **EXIT** button close the line. The gear button opens Settings; Command–comma also opens Settings from the line.
+
+Choose **Sakura Morning**, **Ocean Breeze**, **Lavender Twilight**, or **Liquid Glass** under Settings → Appearance → Themes. Liquid Glass uses native clear glass with Xcode 26/macOS 26 and frosted translucency with older supported toolchains or macOS versions. Cards retain contrasting paper backgrounds. Reduce Motion replaces the slide with a simple fade.

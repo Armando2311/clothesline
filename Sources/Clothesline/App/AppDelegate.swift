@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             || s.customScreenshotFolder != old.customScreenshotFolder { applyWatcherConfig() }
         if s.showMenuBarIcon != old.showMenuBarIcon { updateStatusItem() }
         if s.appearanceStyle != old.appearanceStyle { panel.refreshLayout() }
-        if s.theme != old.theme { panel.lineView.applyTheme() }
+        if s.theme != old.theme { panel.refreshLayout() }
         if s.gentleBreeze != old.gentleBreeze || s.ambientEffects != old.ambientEffects {
             panel.lineView.applyTheme()
             panel.lineView.updateBreeze()

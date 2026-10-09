@@ -21,6 +21,8 @@ final class PanelController: NSObject, LineViewDelegate {
     let lineView: LineView
     private(set) var isVisible = false
     private var reveal: Reveal = .explicit
+    private var escapeMonitor: Any?
+    private var glassContainer: NSView?
     private var dragMonitor: Any?
     private var mouseDownMonitor: Any?
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
@@ -40,7 +42,19 @@ final class PanelController: NSObject, LineViewDelegate {
         nc.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         nc.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
         installDragEdgeMonitor()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            let windowNumber = event.windowNumber
+            let consumed = MainActor.assumeIsolated {
+                guard let self, self.isVisible, keyCode == 53, windowNumber == self.panel.windowNumber else { return false }
+                self.hide()
+                return true
+            }
+            return consumed ? nil : event
+        }
     }
+
+    deinit { if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) } }
 
     // MARK: - Show / hide
 
@@ -49,6 +63,7 @@ final class PanelController: NSObject, LineViewDelegate {
     }
 
     func show(_ how: Reveal) {
+        refreshEnvironment()
         let screen = targetScreen()
         let wasVisible = isVisible
         if !wasVisible || screen != currentScreen { place(on: screen) }
@@ -124,7 +139,51 @@ final class PanelController: NSObject, LineViewDelegate {
         lineView.configure(notchCenterX: placement.notchCenterX)
     }
 
-    func refreshLayout() { if isVisible { place(on: currentScreen ?? targetScreen()) } }
+    func refreshLayout() {
+        refreshEnvironment()
+        if isVisible { place(on: currentScreen ?? targetScreen()) }
+    }
+
+    /// Put the interactive line inside native glass, preserving its responder and drag surface.
+    private func refreshEnvironment() {
+        let glass = model.settings.theme == .liquidGlass
+        if glass && glassContainer == nil {
+            let frame = panel.contentView?.frame ?? lineView.frame
+            lineView.removeFromSuperview()
+            let container: NSView
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                let effect = NSGlassEffectView(frame: frame)
+                effect.style = .clear
+                effect.cornerRadius = 22
+                effect.contentView = lineView
+                container = effect
+            } else { container = makeFrostedContainer(frame: frame) }
+            #else
+            container = makeFrostedContainer(frame: frame)
+            #endif
+            lineView.autoresizingMask = [.width,.height]
+            glassContainer = container
+            panel.contentView = container
+        } else if !glass && glassContainer != nil {
+            lineView.removeFromSuperview()
+            panel.contentView = lineView
+            glassContainer = nil
+        }
+        lineView.applyTheme()
+    }
+
+    private func makeFrostedContainer(frame: NSRect) -> NSVisualEffectView {
+        let effect = NSVisualEffectView(frame: frame)
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 22
+        effect.layer?.masksToBounds = true
+        effect.addSubview(lineView)
+        return effect
+    }
 
     @objc private func screensChanged() {
         guard isVisible else { currentScreen = nil; return }

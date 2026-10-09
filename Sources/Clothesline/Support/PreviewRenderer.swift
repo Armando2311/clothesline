@@ -58,7 +58,12 @@ enum PreviewRenderer {
         // Show the selection outline on two prints.
         view.select(Set(model.activeItems.prefix(2).map(\.id)))
         var rows: [CGImage] = []
-        for theme in [ThemeChoice.summerAfternoon, .goldenHour, .rainyDay, .midnight] {
+        // First reveal stays quiet; subsequent rows include the hover toolbar.
+        view.willAppear(animated: false)
+        view.configure(notchCenterX: nil)
+        if let img = snapshot(view,size: size) { rows.append(img) }
+        view.setToolbarVisible(true,animated: false)
+        for theme in ThemeChoice.allCases.filter({ $0 != .automatic }) {
             model.settings.theme = theme
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             view.configure(notchCenterX: Double(size.width / 2))
@@ -106,7 +111,7 @@ enum PreviewRenderer {
         layer.render(in: ctx)
         // NSHostingView's native control surfaces don't appear in CALayer.render.
         // Draw its AppKit cache separately over the illustrated snapshot.
-        for control in view.subviews {
+        for control in view.subviews where !control.isHidden {
             if let rep = control.bitmapImageRepForCachingDisplay(in: control.bounds) {
                 control.cacheDisplay(in: control.bounds,to: rep)
                 if let image = rep.cgImage {

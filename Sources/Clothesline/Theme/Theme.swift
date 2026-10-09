@@ -66,6 +66,10 @@ struct Theme: Equatable {
         case .goldenHour: return .goldenHour
         case .rainyDay: return .rainyDay
         case .midnight: return .midnight
+        case .sakuraMorning: return .sakuraMorning
+        case .oceanBreeze: return .oceanBreeze
+        case .lavenderTwilight: return .lavenderTwilight
+        case .liquidGlass: return .liquidGlass
         }
     }
 
@@ -128,4 +132,43 @@ struct Theme: Equatable {
         shadow: NSColor(hex: 0x000000), shadowOpacity: 0.45,
         accent: NSColor(hex: 0x9DB8FF), ambient: .fireflies, ambientColor: NSColor(hex: 0xFFE9A3)
     )
+    // Painted environments reuse the established paper and wood treatment.
+    static let sakuraMorning: Theme = {
+        var t = summerAfternoon
+        t.id = .sakuraMorning
+        t.skyTop = NSColor(hex: 0xEF9ECB); t.skyMiddle = NSColor(hex: 0xF7C9E1); t.skyBottom = NSColor(hex: 0xFFF0D9)
+        t.horizonColor = NSColor(hex: 0xAA79B6); t.cloudColor = NSColor(hex: 0xFFF5FB)
+        t.paintedPin = NSColor(hex: 0xC05D9C); t.accent = NSColor(hex: 0xC54C8D)
+        t.noteTints = [NSColor(hex: 0xFFE1F0), NSColor(hex: 0xF5E3FF), NSColor(hex: 0xFFF0C9)]
+        return t
+    }()
+    static let oceanBreeze: Theme = {
+        var t = summerAfternoon
+        t.id = .oceanBreeze
+        t.skyTop = NSColor(hex: 0x49B8D5); t.skyMiddle = NSColor(hex: 0xA4E4DA); t.skyBottom = NSColor(hex: 0xFDF1CD)
+        t.horizonColor = NSColor(hex: 0x338FBA); t.glowPosition = CGPoint(x: 0.25,y: 0.12)
+        t.paintedPin = NSColor(hex: 0x28A59F); t.accent = NSColor(hex: 0x127A92)
+        t.noteTints = [NSColor(hex: 0xDAF6EC), NSColor(hex: 0xDFF0FF), NSColor(hex: 0xFFF0C9)]
+        return t
+    }()
+    static let lavenderTwilight: Theme = {
+        var t = midnight
+        t.id = .lavenderTwilight
+        t.skyTop = NSColor(hex: 0x553A8D); t.skyMiddle = NSColor(hex: 0xAD83C4); t.skyBottom = NSColor(hex: 0xF4BDC7)
+        t.horizonColor = NSColor(hex: 0x3D276B); t.cloudColor = NSColor(hex: 0xE6CAE9); t.cloudOpacity = 0.5
+        t.glowColor = NSColor(hex: 0xFFE3EF); t.paintedPin = NSColor(hex: 0xC8A5FF)
+        t.accent = NSColor(hex: 0xE0C3FF); t.noteTints = [NSColor(hex: 0xF1E3FF), NSColor(hex: 0xFFE0E9), NSColor(hex: 0xE3EBFF)]
+        return t
+    }()
+    static let liquidGlass: Theme = {
+        var t = summerAfternoon
+        t.id = .liquidGlass
+        t.skyTop = NSColor(hex: 0xD9EEFF); t.skyMiddle = NSColor(hex: 0xE6DEFF); t.skyBottom = NSColor(hex: 0xDEF8ED)
+        t.rope = NSColor(hex: 0x869CAC); t.ropeHighlight = .white
+        t.hook = NSColor(hex: 0x778D9F); t.woodLight = NSColor(hex: 0xE6F1FC); t.woodDark = NSColor(hex: 0x91A6BB)
+        t.paintedPin = NSColor(hex: 0x9DB9F7); t.accent = NSColor(hex: 0x3375D7)
+        t.ambient = .none; t.shadowOpacity = 0.18
+        return t
+    }()
+
 }

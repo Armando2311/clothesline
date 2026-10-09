@@ -25,6 +25,7 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
     }
     func perform(_ action: LineAction, from anchor: NSView? = nil) {
         switch action {
+        case .settings: SettingsWindowController.shared.show(model: model)
         case .close: if let view { view.delegate?.lineViewRequestsHide(view) }
         case .preview: preview(from: anchor)
         case .copy: _ = DragWriters.copyToPasteboard(model.selectedItems, model: model)

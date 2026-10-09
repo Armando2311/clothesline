@@ -8,16 +8,18 @@ originally developed in a Linux container; the current workflow upgrade also has
 
 The workflow upgrade and redesign were built on a real Mac using Xcode 26.3 and macOS 26.5. Historical CI measurements below describe the original baseline, not the current build's memory or performance.
 
-- `swift test`: 85 tests, including core, images/exports, OCR, collection navigation and native line regressions. Current result recorded after the final review pass.
+- `swift test`: 90 tests, including core, images/exports, OCR, collection navigation and native line regressions. Current result recorded after the final review pass.
 - App `--self-test`: 27 checks.
 - Xcode Debug build succeeds with DerivedData under `/tmp` (the Documents file provider adds Finder metadata that can prevent signing generated bundles).
-- Rendered preview includes four illustrated themes, two Compact themes, selection, empty state and actual AppKit-cached SwiftUI toolbar controls. Portrait proportions and 2x bitmap dimensions also have regression coverage.
+- Rendered preview includes eight theme choices, the hidden initial toolbar, two Compact themes, selection, empty state and actual AppKit-cached SwiftUI toolbar controls. Portrait proportions and 2x bitmap dimensions also have regression coverage.
 - Independent review findings addressed: source image overwrite/aliases, native modal ordering, and stale OCR after modifying an image while search stays active.
 - Interrupted onboarding remains pending until Get Started. Screenshot e2e script explicitly completes onboarding through the launch argument domain for its test process rather than changing the user's saved completion preference.
 
 Native pointer checks confirmed vertical grip movement and saved position, survival after clicking Xcode, explicit bottom-button close, image number/redaction gestures, accepted derivative Replace, and visible Save/Open panels above the persistent line. The QA app used a separate bundle identifier and sample state.
 
-Native controller/responder tests cover vertical motion, losing key focus, explicit close, search filtering without deletion animation, arrow navigation, Delete/undo, select-all and text-editing isolation. Pointer-driven file dragging, additional display/Dock configurations, signed release/notarization and VoiceOver remain hardware verification items. The line now stays open after screenshots, outside clicks and drops until explicitly toggled or closed; older auto-hide checklist expectations below are superseded.
+Native controller/responder tests cover vertical motion, losing key focus, explicit close, search filtering without deletion animation, arrow navigation, Delete/undo, select-all and text-editing isolation. Pointer-driven file dragging, additional display/Dock configurations, signed release/notarization and VoiceOver remain hardware verification items. The line now stays open after screenshots, outside clicks and drops until explicitly toggled, closed with EXIT, or dismissed with Escape; older auto-hide checklist expectations below are superseded.
+
+The hover/theme follow-up adds native regressions for hidden initial controls, enter/exit transitions, keyboard search focus retaining the toolbar after pointer exit, Escape with active selection/search, theme persistence, and switching native glass without losing the interactive line. Live QA verified hidden first reveal, hover controls, Settings → Appearance theme selection, native clear glass, and Escape dismissal. The static preview cannot reproduce WindowServer backdrop sampling for native glass; its live appearance depends on the windows behind it.
 
 ## 1. Automated (runs on every push) — all passing
 

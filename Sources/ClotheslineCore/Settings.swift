@@ -48,6 +48,10 @@ public enum ThemeChoice: String, Codable, CaseIterable, Sendable {
     case goldenHour
     case rainyDay
     case midnight
+    case sakuraMorning
+    case oceanBreeze
+    case lavenderTwilight
+    case liquidGlass
 
     public var displayName: String {
         switch self {
@@ -56,6 +60,10 @@ public enum ThemeChoice: String, Codable, CaseIterable, Sendable {
         case .goldenHour: return "Golden Hour"
         case .rainyDay: return "Rainy Day"
         case .midnight: return "Midnight"
+        case .sakuraMorning: return "Sakura Morning"
+        case .oceanBreeze: return "Ocean Breeze"
+        case .lavenderTwilight: return "Lavender Twilight"
+        case .liquidGlass: return "Liquid Glass"
         }
     }
 }

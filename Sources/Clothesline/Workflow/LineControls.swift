@@ -2,12 +2,13 @@ import SwiftUI
 import AppKit
 import ClotheslineCore
 
-enum LineAction { case preview, copy, share, prepare, export, browse, note, newLine, previous, next, close }
+enum LineAction { case preview, copy, share, prepare, export, browse, note, newLine, previous, next, settings, close }
 struct LineControls: View {
     @ObservedObject var model: AppModel
     var action: (LineAction, NSView?) -> Void
     @State private var anchor: NSView?
     var searchTarget = "rope"
+    var focusChanged: ((Bool) -> Void)?
     var verticalMove: ((CGFloat) -> Void)?
     @FocusState private var searching: Bool
     var body: some View {
@@ -20,7 +21,7 @@ struct LineControls: View {
             HStack(spacing: 5) {
                 Button { searching = true } label: { Image(systemName: "magnifyingglass").foregroundStyle(.secondary) }.buttonStyle(.plain).keyboardShortcut("f").help("Search (Command–F)").accessibilityLabel("Search")
                 TextField("Search every line", text: $model.query).textFieldStyle(.plain).focused($searching)
-                    .onExitCommand { model.query = ""; searching = false }
+                    .onExitCommand { if searchTarget == "rope" { action(.close,anchor) } else { model.query = ""; searching = false } }
                 if !model.query.isEmpty { Button { model.query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).help("Clear search") }
             }.padding(6).background(.background.opacity(0.7)).cornerRadius(6).frame(minWidth: 150, maxWidth: 250)
             Text(model.selectedIDs.isEmpty ? "\(model.visibleItems.count) items" : "\(model.selectedIDs.count) selected").font(.caption).foregroundStyle(.secondary).frame(minWidth: 64)
@@ -37,13 +38,29 @@ struct LineControls: View {
             icon("New note", "square.and.pencil", .note)
             if searchTarget == "rope" {
                 Divider().frame(height: 20)
-                icon("Close clothesline", "xmark.circle.fill", .close)
+                icon("Settings", "gearshape.fill", .settings)
+                Button("EXIT") { action(.close,anchor) }
+                    .font(.system(size: 13,weight: .bold,design: .rounded))
+                    .padding(.horizontal,10).frame(minWidth: 66,minHeight: 28)
+                    .help("Close clothesline (Escape)").accessibilityLabel("EXIT — Close clothesline")
             }
         }
         .padding(.horizontal,8).padding(.vertical,4)
-        .background(.regularMaterial).cornerRadius(10)
+        .background { toolbarBackground }
         .background(ControlAnchor { anchor = $0 })
+        .onChange(of: searching) { value in focusChanged?(value) }
         .onReceive(NotificationCenter.default.publisher(for: .clotheslineSearch)) { notification in if (notification.userInfo?["target"] as? String ?? "rope") == searchTarget { searching = true } }
+    }
+    @ViewBuilder private var toolbarBackground: some View {
+        if model.settings.theme == .liquidGlass {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                RoundedRectangle(cornerRadius: 14).fill(.clear).glassEffect(.regular,in: RoundedRectangle(cornerRadius: 14))
+            } else { RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial) }
+            #else
+            RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)
+            #endif
+        } else { RoundedRectangle(cornerRadius: 10).fill(.regularMaterial) }
     }
     private func icon(_ label: String, _ symbol: String, _ value: LineAction, enabled: Bool = true) -> some View {
         Button { action(value,anchor) } label: { Image(systemName: symbol).frame(width: 18) }

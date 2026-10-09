@@ -13,6 +13,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let host = NSHostingController(rootView: SettingsView(model: model))
             let w = NSWindow(contentViewController: host)
             w.title = "Clothesline Settings"
+            w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
             w.delegate = self
@@ -71,7 +72,7 @@ private struct GeneralSettings: View {
             }
 
             Section("Behaviour") {
-                Text("The line stays open until you use its shortcut or Close button.").font(.caption)
+                Text("The line stays open until you use its shortcut, Escape or EXIT button.").font(.caption)
                 Toggle("Reveal the line when dragging something to the top of the screen", isOn: $model.settings.revealOnDragToTopEdge)
                 Picker("After dragging an item out", selection: $model.settings.afterDragOut) {
                     ForEach(AfterDragOut.allCases, id: \.self) { Text($0.displayName).tag($0) }
@@ -210,7 +211,7 @@ private struct AppearanceSettings: View {
                 }
                 Text("Compact keeps the rope and uses upright cards with less decoration.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Sky") {
+            Section("Themes") {
                 Picker("Theme", selection: $model.settings.theme) {
                     ForEach(ThemeChoice.allCases, id: \.self) { choice in
                         HStack {
@@ -221,6 +222,7 @@ private struct AppearanceSettings: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
+                Text("Liquid Glass uses native glass on macOS 26, with frosted translucency on earlier versions.").font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Gentle breeze (items sway slightly while the line is open)", isOn: $model.settings.gentleBreeze)
