@@ -78,7 +78,7 @@ struct Theme: Equatable {
         rope: NSColor(hex: 0xC9A47C), ropeHighlight: NSColor(hex: 0xEED8B8), hook: NSColor(hex: 0x8E6E4E),
         woodLight: NSColor(hex: 0xE9C597), woodDark: NSColor(hex: 0xB8865A), spring: NSColor(hex: 0x8C949C),
         paintedPin: NSColor(hex: 0xF08BA0),
-        paper: NSColor(hex: 0xFFFDF8), paperEdge: NSColor(hex: 0xE8E1D4), ink: NSColor(hex: 0x3D3A4A), inkSoft: NSColor(hex: 0x8A8496),
+        paper: NSColor(hex: 0xFFFDF8), paperEdge: NSColor(hex: 0xE8E1D4), ink: NSColor(hex: 0x20212B), inkSoft: NSColor(hex: 0x494653),
         noteTints: [NSColor(hex: 0xFFF6C9), NSColor(hex: 0xFFE3E6), NSColor(hex: 0xE2F3E4), NSColor(hex: 0xE4ECFF)],
         shadow: NSColor(hex: 0x2B3F66), shadowOpacity: 0.22,
         accent: NSColor(hex: 0xFF7E9D), ambient: .motes, ambientColor: NSColor(hex: 0xFFF8E0)
@@ -93,7 +93,7 @@ struct Theme: Equatable {
         rope: NSColor(hex: 0xA97C55), ropeHighlight: NSColor(hex: 0xE7BF8E), hook: NSColor(hex: 0x6E4A33),
         woodLight: NSColor(hex: 0xE6B37E), woodDark: NSColor(hex: 0xA8703F), spring: NSColor(hex: 0x8A7F7A),
         paintedPin: NSColor(hex: 0xE2574C),
-        paper: NSColor(hex: 0xFFF8EE), paperEdge: NSColor(hex: 0xEBD9C2), ink: NSColor(hex: 0x4A3330), inkSoft: NSColor(hex: 0x977A70),
+        paper: NSColor(hex: 0xFFF8EE), paperEdge: NSColor(hex: 0xEBD9C2), ink: NSColor(hex: 0x29201F), inkSoft: NSColor(hex: 0x55413B),
         noteTints: [NSColor(hex: 0xFFEFC4), NSColor(hex: 0xFFDCCF), NSColor(hex: 0xF3E6C9), NSColor(hex: 0xFCE0E8)],
         shadow: NSColor(hex: 0x6B2A1E), shadowOpacity: 0.26,
         accent: NSColor(hex: 0xFF6A4D), ambient: .motes, ambientColor: NSColor(hex: 0xFFE7B0)
@@ -108,7 +108,7 @@ struct Theme: Equatable {
         rope: NSColor(hex: 0x8C7D6D), ropeHighlight: NSColor(hex: 0xBDB1A2), hook: NSColor(hex: 0x5C5148),
         woodLight: NSColor(hex: 0xC9A986), woodDark: NSColor(hex: 0x8E6E52), spring: NSColor(hex: 0x7E8790),
         paintedPin: NSColor(hex: 0x6FA8DC),
-        paper: NSColor(hex: 0xF7F8FA), paperEdge: NSColor(hex: 0xD9DEE5), ink: NSColor(hex: 0x36404F), inkSoft: NSColor(hex: 0x7D8797),
+        paper: NSColor(hex: 0xF7F8FA), paperEdge: NSColor(hex: 0xD9DEE5), ink: NSColor(hex: 0x202A38), inkSoft: NSColor(hex: 0x465266),
         noteTints: [NSColor(hex: 0xEEF2D8), NSColor(hex: 0xE3E9F3), NSColor(hex: 0xF1E4E8), NSColor(hex: 0xE2EEEA)],
         shadow: NSColor(hex: 0x1D2638), shadowOpacity: 0.28,
         accent: NSColor(hex: 0x7DB9EA), ambient: .rain, ambientColor: NSColor(hex: 0xE9F1FB)
@@ -123,7 +123,7 @@ struct Theme: Equatable {
         rope: NSColor(hex: 0x9C8A74), ropeHighlight: NSColor(hex: 0xD3C6B4), hook: NSColor(hex: 0x6F6252),
         woodLight: NSColor(hex: 0xC6A27C), woodDark: NSColor(hex: 0x86664A), spring: NSColor(hex: 0xA8B2C2),
         paintedPin: NSColor(hex: 0xF2C14E),
-        paper: NSColor(hex: 0xEDEBE6), paperEdge: NSColor(hex: 0xC9C6C0), ink: NSColor(hex: 0x2F3242), inkSoft: NSColor(hex: 0x6E7286),
+        paper: NSColor(hex: 0xEDEBE6), paperEdge: NSColor(hex: 0xC9C6C0), ink: NSColor(hex: 0x202331), inkSoft: NSColor(hex: 0x43475B),
         noteTints: [NSColor(hex: 0xEDE6C4), NSColor(hex: 0xE6D7DD), NSColor(hex: 0xD6E3DA), NSColor(hex: 0xD8DEEE)],
         shadow: NSColor(hex: 0x000000), shadowOpacity: 0.45,
         accent: NSColor(hex: 0x9DB8FF), ambient: .fireflies, ambientColor: NSColor(hex: 0xFFE9A3)

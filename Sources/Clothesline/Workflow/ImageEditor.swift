@@ -94,15 +94,10 @@ struct ImageEditor: View {
                             }.onEnded { value in
                                 pending = nil
                                 let a = unit(value.startLocation,width: w,height: h), b = unit(value.location,width: w,height: h)
+                                var next = edits
+                                guard next.applyGesture(tool: tool, start: a, end: b) else { return }
                                 remember()
-                                if tool == "Crop" {
-                                    let r = rect(a,b)
-                                    guard r.width > 0.01, r.height > 0.01 else { _ = history.popLast(); return }
-                                    edits.applyCrop(r)
-                                } else {
-                                    let kind: ImageMark.Kind = tool == "Redact" ? .redact : tool == "Number" ? .number : .arrow
-                                    edits.marks.append(ImageMark(kind: kind,start: a,end: b,number: edits.marks.filter { $0.kind == .number }.count+1))
-                                }
+                                edits = next
                             })
                         Spacer(minLength: 0)
                     }
@@ -129,11 +124,12 @@ struct ImageEditor: View {
         guard let source else { return }
         var destination: URL?
         if action == .save {
-            let panel = NSSavePanel(); panel.allowedContentTypes = [format == .png ? .png : .jpeg]
+            let panel = NSSavePanel(); panel.level = WorkflowPresentation.modalLevel; panel.allowedContentTypes = [format == .png ? .png : .jpeg]
             panel.nameFieldStringValue = ExportNames.safe(title) + "-edited." + (format == .png ? "png" : "jpg")
             guard panel.runModal() == .OK, let url = panel.url else { return }
             destination = url
         }
+        let originalURL = model.files.resolve(reference).url ?? reference.url
         let snapshot = edits, outputFormat = format, outputQuality = quality
         if limitEnabled && format == .jpeg && (!limitMB.isFinite || limitMB <= 0 || limitMB > 1000) { error = "Choose a size limit between 0 and 1000 MB."; return }
         let bytes = limitEnabled && format == .jpeg ? Int(limitMB*1_000_000) : nil
@@ -150,7 +146,7 @@ struct ImageEditor: View {
                 case .hang:
                     guard model.hang(imageData: data,fileExtension: outputFormat == .png ? "png" : "jpg",suggestedName: title+"-edited",source: .manual) != nil else { throw WorkflowError.unreadable("the prepared image") }
                 case .save:
-                    if let destination { try await Task.detached { try data.write(to: destination,options: .withoutOverwriting) }.value }
+                    if let destination { try await Task.detached { try ImageProcessor.saveResult(data, to: destination, protecting: originalURL) }.value }
                 }
                 status = "\(action == .copy ? "Copied" : action == .hang ? "Hung on the line" : "Saved") · \(ByteCountFormatter.string(fromByteCount: Int64(data.count),countStyle: .file))"
             } catch { self.error = error.localizedDescription }

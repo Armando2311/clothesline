@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         watcher.onScreenshot = { [weak self] url in self?.model.screenshotDetected(url) }
         watcher.onStatusChange = { [weak self] status in self?.model.screenshotStatus = status }
-        if !UserDefaults.standard.bool(forKey: "didShowWelcome") && !UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") {
+        if !UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") {
             WelcomeWindow.shared.show { [weak self] in self?.applyWatcherConfig(); self?.panel.show(.explicit) }
         } else { applyWatcherConfig() }
 
@@ -56,9 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         model.revalidate()
 
-        // First launch: show the line once so people know where it lives.
+        // Record first launch only after the guide completes.
         let firstLaunchKey = "didShowWelcome"
-        if !UserDefaults.standard.bool(forKey: firstLaunchKey) {
+        if !UserDefaults.standard.bool(forKey: firstLaunchKey), UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") {
             UserDefaults.standard.set(true, forKey: firstLaunchKey)
             if UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") { after(0.6) { [weak self] in self?.panel.show(.explicit) } }
         }
@@ -84,9 +84,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             || s.customScreenshotFolder != old.customScreenshotFolder { applyWatcherConfig() }
         if s.showMenuBarIcon != old.showMenuBarIcon { updateStatusItem() }
         if s.appearanceStyle != old.appearanceStyle { panel.refreshLayout() }
-        if s.theme != old.theme { panel.lineView.applyTheme(force: true) }
+        if s.theme != old.theme { panel.lineView.applyTheme() }
         if s.gentleBreeze != old.gentleBreeze || s.ambientEffects != old.ambientEffects {
-            panel.lineView.applyTheme(force: true)
+            panel.lineView.applyTheme()
             panel.lineView.updateBreeze()
         }
         if s.retention != old.retention { model.applyRetention() }
@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func applyWatcherConfig() {
+        guard UserDefaults.standard.bool(forKey: "didCompleteWorkflowWelcome") else { return }
         customFolderAccess?.stopAccessingSecurityScopedResource()
         customFolderAccess = nil
         var custom: URL?

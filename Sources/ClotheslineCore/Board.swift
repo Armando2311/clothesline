@@ -37,6 +37,12 @@ public struct Board: Codable, Equatable, Sendable {
         items.filter { $0.lineID == lineID }
     }
 
+    /// Include a destination if at least one selected item would actually move.
+    public func moveDestinations(for selected: [HangingItem]) -> [Line] {
+        guard !selected.isEmpty else { return [] }
+        return lines.filter { line in selected.contains { $0.lineID != line.id } }
+    }
+
     public var activeItems: [HangingItem] { items(on: activeLineID) }
 
     public func item(_ id: UUID) -> HangingItem? {

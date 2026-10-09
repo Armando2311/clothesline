@@ -6,6 +6,7 @@ import ClotheslineCore
 
 @MainActor
 protocol LineViewDelegate: AnyObject {
+    func lineViewRequestsVerticalMove(_ view: LineView, delta: CGFloat)
     func lineViewRequestsHide(_ view: LineView)
     func lineViewDidInteract(_ view: LineView)
     func lineViewDragDidExit(_ view: LineView)
@@ -48,6 +49,8 @@ final class LineView: NSView {
     private var layout = LineLayout(geometry: LineGeometry(width: 1200, centerHookX: nil), itemWidth: 100, jitters: [])
     private var orderedIDs: [UUID] = []
     private var renderedLineID: UUID?
+    private var renderedCards: [UUID: HangingItem] = [:]
+    private var renderedAppearanceStyle: AppearanceStyle = .illustrated
     private var scrollOffset: Double = 0
     private var dropIndex: Int?
     private(set) var selection: Set<UUID> {
@@ -68,7 +71,7 @@ final class LineView: NSView {
     private var draggingIDs: [UUID] = []
     private var internalDropHappened = false
 
-    static let skyInsetBottom: CGFloat = 26
+    static let skyInsetBottom: CGFloat = 8
     static let itemWidth: Double = 100
 
     init(model: AppModel) {
@@ -78,17 +81,22 @@ final class LineView: NSView {
         layerContentsRedrawPolicy = .never
         layer?.masksToBounds = false
         setupLayers()
-        let controls = NSHostingView(rootView: LineControls(model: model) { [weak self] action, anchor in
+        let controls = NSHostingView(rootView: LineControls(model: model, action: { [weak self] action, anchor in
             guard let self else { return }
             self.delegate?.lineViewRequestsKeyFocus(self)
             self.workflow.perform(action, from: anchor)
-        })
+        }, verticalMove: { [weak self] delta in
+            guard let self else { return }
+            self.delegate?.lineViewRequestsVerticalMove(self, delta: delta)
+        }))
         self.controls = controls
         addSubview(controls)
-        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged() }.store(in: &cancellables)
-        model.$recognizedText.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged() }.store(in: &cancellables)
+        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged(filtering: true) }.store(in: &cancellables)
+        model.$recognizedText.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$selectedIDs.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelectionAppearance() }.store(in: &cancellables)
-        model.$settings.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme(force: true) }.store(in: &cancellables)
+        model.$settings.removeDuplicates { a,b in
+            a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.ambientEffects == b.ambientEffects && a.gentleBreeze == b.gentleBreeze
+        }.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme() }.store(in: &cancellables)
         registerForDraggedTypes(PasteboardImporter.acceptedTypes)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Clothesline")
@@ -143,8 +151,8 @@ final class LineView: NSView {
         captionLayer.truncationMode = .middle
         captionLayer.cornerRadius = 6
         captionLayer.zPosition = 1000
-        captionLayer.font = Artwork.roundedFont(10, weight: .medium)
-        captionLayer.fontSize = 10
+        captionLayer.font = Artwork.roundedFont(13, weight: .semibold)
+        captionLayer.fontSize = 13
         lineNameLayer.alignmentMode = .left
         lineNameLayer.font = Artwork.roundedFont(10, weight: .semibold)
         lineNameLayer.fontSize = 10
@@ -164,7 +172,9 @@ final class LineView: NSView {
 
     func applyTheme(force: Bool = false) {
         let resolved = Theme.resolve(model.settings.theme, appearance: effectiveAppearance)
-        guard force || resolved != theme else { return }
+        let styleChanged = renderedAppearanceStyle != model.settings.appearanceStyle
+        guard force || resolved != theme || styleChanged else { updateAmbient(); updateBreeze(); return }
+        renderedAppearanceStyle = model.settings.appearanceStyle
         theme = resolved
         let compact = model.settings.appearanceStyle == .compact
         sky.isHidden = compact
@@ -339,7 +349,7 @@ final class LineView: NSView {
 
     // MARK: - Model → layers
 
-    private func boardChanged() {
+    private func boardChanged(filtering: Bool = false) {
         let board = model.board
         let lineChanged = renderedLineID != board.activeLineID
         renderedLineID = board.activeLineID
@@ -354,6 +364,7 @@ final class LineView: NSView {
             // Switching lines: swap everything without per-item theatrics.
             itemLayers.values.forEach { $0.removeFromSuperlayer() }
             itemLayers = [:]
+            renderedCards = [:]
             scrollOffset = 0
             for id in newIDs { makeLayer(for: id) }
             relayout(animated: false)
@@ -367,12 +378,19 @@ final class LineView: NSView {
         let animate = isOnScreen && !Motion.reduced
         for id in removed {
             guard let l = itemLayers.removeValue(forKey: id) else { continue }
-            if isOnScreen { animateRemoval(of: l, style: model.lastRemovalStyle) } else { l.removeFromSuperlayer() }
+            renderedCards[id] = nil
+            if filtering && isOnScreen {
+                CATransaction.begin()
+                CATransaction.setCompletionBlock { l.removeFromSuperlayer() }
+                fadeLayer(l, in: false); l.opacity = 0
+                CATransaction.commit()
+            } else if isOnScreen { animateRemoval(of: l, style: model.lastRemovalStyle) } else { l.removeFromSuperlayer() }
         }
         for id in added { makeLayer(for: id) }
-        for id in newIDs where !added.contains(id) { updateCard(for: id) }
-        relayout(animated: animate)
-        if animate {
+        for id in newIDs where !added.contains(id) && renderedCards[id] != board.item(id) { updateCard(for: id) }
+        relayout(animated: animate && !filtering)
+        if filtering { for id in added { if let l = itemLayers[id] { fadeLayer(l, in: true) } } }
+        if animate && !filtering {
             for id in added where model.recentlyAdded.contains(id) {
                 if let l = itemLayers[id] { animateClipOn(l) }
             }
@@ -380,7 +398,7 @@ final class LineView: NSView {
         }
         if !added.isEmpty || !removed.isEmpty {
             updateBreeze()
-            if model.settings.playSounds && isOnScreen {
+            if model.settings.playSounds && isOnScreen && !filtering {
                 NSSound(named: added.isEmpty ? "Pop" : "Tink")?.play()
             }
             NSAccessibility.post(element: self, notification: .layoutChanged)
@@ -447,6 +465,7 @@ final class LineView: NSView {
         let input = Artwork.CardInput(item: item, thumbnail: thumb, icon: icon, availability: avail, theme: theme, scale: scale)
         let card = model.settings.appearanceStyle == .compact ? Artwork.compactCard(input) : Artwork.card(input)
         let pin = Artwork.clothespin(theme: theme, painted: item.pinned, scale: scale)
+        renderedCards[id] = item
         l.configure(card: card, pin: pin, theme: theme, scale: scale)
         l.isSelected = selection.contains(id)
         l.setAccessibilityDescription(item)
@@ -457,7 +476,7 @@ final class LineView: NSView {
     func relayout(animated: Bool) {
         let width = Double(bounds.width)
         guard width > 0 else { return }
-        geometry = LineGeometry(width: width, centerHookX: notchCenterX, sagScale: model.settings.appearanceStyle == .compact ? 0.15 : 1)
+        geometry = LineGeometry(width: width, centerHookX: notchCenterX, sagScale: model.settings.appearanceStyle == .compact ? 0.15 : 0.35)
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         lineLayer.frame = bounds
@@ -657,8 +676,8 @@ final class LineView: NSView {
         guard let l = hintLayer else { return }
         let shortcut = model.settings.toggleShortcut?.displayString ?? "the menu bar icon"
         let (image, size) = Artwork.hintTag(
-            text: "Drop anything here",
-            detail: "Screenshots hang themselves · \(shortcut) shows or hides the line",
+            text: model.isSearching ? "No matching items" : "Drop anything here",
+            detail: model.isSearching ? "Try another word or clear the search" : "Screenshots hang themselves · \(shortcut) shows or hides the line",
             theme: theme, scale: scale)
         let top = Artwork.pinSize.height - Artwork.pinGrip
         l.bounds = CGRect(x: 0, y: 0, width: size.width, height: size.height + top)
@@ -893,8 +912,6 @@ final class LineView: NSView {
                 QLPreviewPanel.shared().orderOut(nil)
             } else if !selection.isEmpty {
                 selection = []
-            } else {
-                delegate?.lineViewRequestsHide(self)
             }
         case 48: model.cycleLine(by: flags.contains(.shift) ? -1 : 1) // ⇥
         default:

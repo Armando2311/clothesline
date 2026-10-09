@@ -71,7 +71,7 @@ private struct GeneralSettings: View {
             }
 
             Section("Behaviour") {
-                Toggle("Hide the line when clicking elsewhere", isOn: $model.settings.hideWhenClickingOutside)
+                Text("The line stays open until you use its shortcut or Close button.").font(.caption)
                 Toggle("Reveal the line when dragging something to the top of the screen", isOn: $model.settings.revealOnDragToTopEdge)
                 Picker("After dragging an item out", selection: $model.settings.afterDragOut) {
                     ForEach(AfterDragOut.allCases, id: \.self) { Text($0.displayName).tag($0) }
@@ -184,6 +184,7 @@ private struct ScreenshotSettings: View {
 
     private func chooseFolder() {
         let panel = NSOpenPanel()
+        panel.level = WorkflowPresentation.modalLevel
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.prompt = "Watch This Folder"

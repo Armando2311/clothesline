@@ -191,10 +191,8 @@ enum Artwork {
         return CGSize(width: round(w), height: round(h))
     }
 
-    private static let captionFont: NSFont = NSFont(name: "Noteworthy-Light", size: 8.5)
-        ?? NSFont(name: "Bradley Hand", size: 8.5) ?? .systemFont(ofSize: 8)
-    private static let noteFont: NSFont = NSFont(name: "Noteworthy-Light", size: 10)
-        ?? NSFont(name: "Bradley Hand", size: 10) ?? .systemFont(ofSize: 9.5)
+    private static let captionFont = NSFont.systemFont(ofSize: 12,weight: .semibold)
+    private static let noteFont = NSFont.systemFont(ofSize: 13,weight: .medium)
 
     static func roundedFont(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
         let base = NSFont.systemFont(ofSize: size, weight: weight)
@@ -239,7 +237,7 @@ enum Artwork {
     private static func photoPrint(_ input: CardInput) -> Card {
         let theme = input.theme
         let imageSize = fittedSize(for: input.thumbnail, maxSize: CGSize(width: 104, height: 82), fallback: CGSize(width: 92, height: 68))
-        let side: CGFloat = 5, top: CGFloat = 5, bottom: CGFloat = 17
+        let side: CGFloat = 5, top: CGFloat = 5, bottom: CGFloat = 23
         let size = CGSize(width: imageSize.width + side * 2, height: imageSize.height + top + bottom)
         let outline = CGPath(roundedRect: CGRect(origin: .zero, size: size), cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
         let image = render(size: size, scale: input.scale) { ctx in
@@ -293,7 +291,7 @@ enum Artwork {
                 caption = input.item.title
             }
             drawText(caption, in: CGRect(x: 4, y: size.height - bottom + 2.5, width: size.width - 8, height: bottom - 3),
-                     font: captionFont, color: theme.inkSoft, lines: 1)
+                     font: captionFont, color: theme.ink, lines: 1)
             drawStamp(input.availability, in: size, theme: theme)
         }
         return Card(image: image, size: size, outline: outline)
@@ -343,7 +341,7 @@ enum Artwork {
             ctx.setFillColor(theme.paperEdge.cgColor)
             ctx.fill(CGRect(x: 6, y: size.height - labelHeight, width: size.width - 12, height: 0.5))
             drawText(input.item.title, in: CGRect(x: 5, y: size.height - labelHeight + 3, width: size.width - 10, height: labelHeight - 4),
-                     font: roundedFont(8, weight: .medium), color: theme.ink)
+                     font: roundedFont(12, weight: .semibold), color: theme.ink)
 
             if foldedCorner {
                 // Small type ribbon.
@@ -426,7 +424,7 @@ enum Artwork {
             ctx.setStrokeColor(theme.paperEdge.cgColor)
             ctx.setLineWidth(0.5)
             ctx.stroke(label)
-            drawText(input.item.title, in: label.insetBy(dx: 3, dy: 3), font: captionFont.withSize(9.5), color: theme.ink, lines: 1)
+            drawText(input.item.title, in: label.insetBy(dx: 3, dy: 3), font: captionFont, color: theme.ink, lines: 1)
             ctx.restoreGState()
             drawStamp(input.availability, in: size, theme: theme)
         }
@@ -524,12 +522,12 @@ enum Artwork {
                 let r = CGRect(x: 25, y: 9, width: 12, height: 12)
                 tinted.draw(in: r, from: .zero, operation: .sourceOver, fraction: 0.65, respectFlipped: true, hints: nil)
             }
-            drawText(headline, in: CGRect(x: 39, y: 8, width: size.width - 44, height: 14), font: roundedFont(10, weight: .semibold), color: theme.ink, alignment: .left, lines: 1)
+            drawText(headline, in: CGRect(x: 39, y: 8, width: size.width - 44, height: 14), font: roundedFont(12, weight: .semibold), color: theme.ink, alignment: .left, lines: 1)
             // Full address underneath, without the scheme.
             var detail = isMail ? String(link.dropFirst("mailto:".count)) : link
             for prefix in ["https://", "http://"] where detail.hasPrefix(prefix) { detail.removeFirst(prefix.count) }
             if detail.hasPrefix("www.") { detail.removeFirst(4) }
-            drawText(detail, in: CGRect(x: 25, y: 25, width: size.width - 30, height: 26), font: roundedFont(7.5), color: theme.inkSoft, alignment: .left, lines: 2)
+            drawText(detail, in: CGRect(x: 25, y: 25, width: size.width - 30, height: 26), font: roundedFont(10), color: theme.ink, alignment: .left, lines: 2)
             ctx.addPath(outline)
             ctx.setStrokeColor(NSColor(hex: 0x9C7A45, alpha: 0.4).cgColor)
             ctx.setLineWidth(0.6)
@@ -559,7 +557,7 @@ enum Artwork {
             ctx.setFillColor(theme.paper.withAlphaComponent(0.92).cgColor)
             ctx.fillPath()
             drawText(text, in: CGRect(x: 8, y: 12, width: size.width - 16, height: 20), font: noteFont.withSize(13), color: theme.ink, lines: 1)
-            drawText(detail, in: CGRect(x: 8, y: 34, width: size.width - 16, height: 22), font: roundedFont(8.5), color: theme.inkSoft, lines: 2)
+            drawText(detail, in: CGRect(x: 8, y: 34, width: size.width - 16, height: 22), font: roundedFont(11), color: theme.ink, lines: 2)
         }
         return (image, size)
     }

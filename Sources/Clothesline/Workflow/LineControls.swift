@@ -2,15 +2,17 @@ import SwiftUI
 import AppKit
 import ClotheslineCore
 
-enum LineAction { case preview, copy, share, prepare, export, browse, note, newLine, previous, next }
+enum LineAction { case preview, copy, share, prepare, export, browse, note, newLine, previous, next, close }
 struct LineControls: View {
     @ObservedObject var model: AppModel
     var action: (LineAction, NSView?) -> Void
     @State private var anchor: NSView?
     var searchTarget = "rope"
+    var verticalMove: ((CGFloat) -> Void)?
     @FocusState private var searching: Bool
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            if let verticalMove { PanelDragHandle(move: verticalMove).frame(width: 24,height: 24).help("Drag to move the clothesline up or down") }
             Picker("Line", selection: Binding(get: { model.board.activeLineID }, set: { model.query = ""; model.activate(lineID: $0) })) {
                 ForEach(model.board.lines) { Text($0.name).tag($0.id) }
             }.labelsHidden().frame(width: 145).help("Switch clothesline")
@@ -33,8 +35,12 @@ struct LineControls: View {
             icon("Prepare image", "slider.horizontal.3", .prepare, enabled: model.selectedItems.count == 1 && [.image,.screenshot].contains(model.selectedItems[0].kind))
             Button("Export…") { action(.export,anchor) }.disabled(model.selectedItems.isEmpty)
             icon("New note", "square.and.pencil", .note)
+            if searchTarget == "rope" {
+                Divider().frame(height: 20)
+                icon("Close clothesline", "xmark.circle.fill", .close)
+            }
         }
-        .padding(.horizontal,12).padding(.vertical,6)
+        .padding(.horizontal,8).padding(.vertical,4)
         .background(.regularMaterial).cornerRadius(10)
         .background(ControlAnchor { anchor = $0 })
         .onReceive(NotificationCenter.default.publisher(for: .clotheslineSearch)) { notification in if (notification.userInfo?["target"] as? String ?? "rope") == searchTarget { searching = true } }

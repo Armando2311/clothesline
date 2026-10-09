@@ -41,8 +41,10 @@ enum ExportService {
                 throw NSError(domain: "Clothesline",code: 3,userInfo: [NSLocalizedDescriptionKey: "Choose an export folder outside the folders you are exporting."])
             }
         }
-        let stage = destination.appendingPathComponent(".clothesline-\(UUID().uuidString)", isDirectory: true)
-        try fm.createDirectory(at: stage, withIntermediateDirectories: false)
+        // Keep unpublished files on the destination volume without exposing staging
+        // entries inside the folder the user selected.
+        let stage = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                               appropriateFor: destination, create: true)
         defer { try? fm.removeItem(at: stage) }
         let name = ExportNames.safe(options.packageName)
         let folder = stage.appendingPathComponent(name, isDirectory: true)

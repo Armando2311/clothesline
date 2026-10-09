@@ -16,6 +16,21 @@ struct ImageEdits: Equatable {
     var crop = CGRect(x: 0, y: 0, width: 1, height: 1)
     var maxEdge = 1600
     var marks: [ImageMark] = []
+    @discardableResult
+    mutating func applyGesture(tool: String, start: CGPoint, end: CGPoint) -> Bool {
+        if tool == "Crop" {
+            let region = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                width: abs(start.x-end.x), height: abs(start.y-end.y))
+            guard region.width > 0.01, region.height > 0.01 else { return false }
+            applyCrop(region)
+        } else {
+            let kind: ImageMark.Kind = tool == "Redact" ? .redact : tool == "Number" ? .number : .arrow
+            guard kind == .number || start != end else { return false }
+            guard kind != .redact || (start.x != end.x && start.y != end.y) else { return false }
+            marks.append(ImageMark(kind: kind, start: start, end: end, number: marks.filter { $0.kind == .number }.count+1))
+        }
+        return true
+    }
     mutating func applyCrop(_ region: CGRect) {
         guard region.width > 0, region.height > 0 else { return }
         let old = crop
@@ -30,6 +45,24 @@ struct ImageEdits: Equatable {
 }
 
 enum ImageProcessor {
+    static func saveResult(_ data: Data, to destination: URL, protecting source: URL? = nil) throws {
+        if let source {
+            let original = source.resolvingSymlinksInPath().standardizedFileURL
+            let chosen = destination.resolvingSymlinksInPath().standardizedFileURL
+            let fm = FileManager.default
+            let a = try? fm.attributesOfItem(atPath: original.path)
+            let b = try? fm.attributesOfItem(atPath: chosen.path)
+            let sameInode = a?[.systemFileNumber] as? NSNumber == b?[.systemFileNumber] as? NSNumber
+                && a?[.systemNumber] as? NSNumber == b?[.systemNumber] as? NSNumber
+                && a?[.systemFileNumber] != nil && b?[.systemFileNumber] != nil
+            guard original != chosen, !sameInode else {
+                throw NSError(domain: "Clothesline",code: 4,userInfo: [NSLocalizedDescriptionKey: "Choose a different name or folder. The original image stays unchanged."])
+            }
+        }
+        // Only called after NSSavePanel accepts the user's chosen destination,
+        // including its Replace confirmation for an existing file.
+        try data.write(to: destination, options: .atomic)
+    }
     static func load(_ url: URL) throws -> CGImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -64,6 +97,8 @@ enum ImageProcessor {
             let a = CGPoint(x: mark.start.x * CGFloat(width), y: mark.start.y * CGFloat(height))
             let b = CGPoint(x: mark.end.x * CGFloat(width), y: mark.end.y * CGFloat(height))
             guard [a.x, a.y, b.x, b.y].allSatisfy({ $0.isFinite }) else { throw WorkflowError.invalidOptions }
+            if mark.kind == .arrow && a == b { continue }
+            if mark.kind == .redact && (a.x == b.x || a.y == b.y) { continue }
             switch mark.kind {
             case .redact:
                 c.setFillColor(CGColor(gray: 0, alpha: 1))
@@ -96,10 +131,25 @@ enum ImageProcessor {
     }
     static func encode(_ image: CGImage, format: ImageFormat, quality: Double, maxBytes: Int? = nil) throws -> Data {
         guard quality.isFinite, (0.05...1).contains(quality), maxBytes == nil || maxBytes! > 0 else { throw WorkflowError.invalidOptions }
+        let encodedImage: CGImage
+        if format == .jpeg {
+            guard let context = CGContext(data: nil, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw WorkflowError.invalidOptions }
+            let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(bounds)
+            context.draw(image, in: bounds)
+            guard let opaque = context.makeImage() else { throw WorkflowError.invalidOptions }
+            encodedImage = opaque
+        } else {
+            encodedImage = image
+        }
         func encodeAt(_ q: Double) throws -> Data {
             let data = NSMutableData()
             guard let dest = CGImageDestinationCreateWithData(data, (format == .png ? UTType.png.identifier : UTType.jpeg.identifier) as CFString, 1, nil) else { throw WorkflowError.invalidOptions }
-            CGImageDestinationAddImage(dest,image,[kCGImageDestinationLossyCompressionQuality:q] as CFDictionary)
+            CGImageDestinationAddImage(dest,encodedImage,[kCGImageDestinationLossyCompressionQuality:q] as CFDictionary)
             guard CGImageDestinationFinalize(dest) else { throw WorkflowError.invalidOptions }
             return data as Data
         }

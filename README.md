@@ -143,3 +143,9 @@ and automatic clipboard history are not included.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions,
 [docs/TESTING.md](docs/TESTING.md) for what has been verified and what still needs manual
 testing, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
+### Smaller, persistent clothesline
+
+The illustrated line is now 210 points high (Compact: 190), with larger dark card labels and a shallower rope. Clicks in Finder or another app leave it open while you pick up files. Close it with Control–Option–C (or your configured toggle shortcut) or the close button at the right of the bottom toolbar. Drag the up/down grip at the toolbar's left to uncover files behind it; the position is saved per display and constrained to the visible desktop.
+
+Search uses gentle filtering without deletion effects. Compact thumbnails retain their aspect ratio at Retina scale. OCR is debounced, runs off the UI thread, and caches results locally across launches. JPEG exports explicitly composite transparency over white. Save Result allows replacing an existing derivative after native confirmation, while protecting the source image, symlinks and hardlinks. Collection browsing supports arrow keys, Space preview, Delete/undo and Command–A/C/F.

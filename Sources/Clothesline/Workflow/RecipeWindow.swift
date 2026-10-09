@@ -89,7 +89,7 @@ struct RecipeView: View {
         return RecipeOptions(recipe: recipe)
     }
     private func chooseFolder() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+        let panel = NSOpenPanel(); panel.level = WorkflowPresentation.modalLevel; panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         scopedDestination?.stopAccessingSecurityScopedResource(); scopedDestination = nil
         destination = url

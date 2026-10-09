@@ -10,8 +10,8 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
     private var sharePicker: NSSharingServicePicker?
     init(model: AppModel, view: LineView) { self.model = model; self.view = view; super.init() }
     func present<Content: View>(_ title: String, key: String, size: CGSize, @ViewBuilder content: () -> Content) {
-        if let view { view.delegate?.lineViewRequestsHide(view) }
         let window = windows[key] ?? NSWindow(contentRect: CGRect(origin: .zero,size: size), styleMask: [.titled,.closable,.miniaturizable,.resizable], backing: .buffered, defer: false)
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         window.delegate = self
         window.title = title; window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: content())
@@ -25,6 +25,7 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
     }
     func perform(_ action: LineAction, from anchor: NSView? = nil) {
         switch action {
+        case .close: if let view { view.delegate?.lineViewRequestsHide(view) }
         case .preview: preview(from: anchor)
         case .copy: _ = DragWriters.copyToPasteboard(model.selectedItems, model: model)
         case .share: share(from: anchor)
@@ -94,6 +95,10 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
 }
 
 @MainActor func showWorkflowError(_ error: Error) {
-    let alert = NSAlert(); alert.messageText = "Could not complete the action"; alert.informativeText = error.localizedDescription
+    let alert = NSAlert(); alert.window.level = WorkflowPresentation.modalLevel; alert.messageText = "Could not complete the action"; alert.informativeText = error.localizedDescription
     NSApp.activate(ignoringOtherApps: true); alert.runModal()
+}
+
+@MainActor enum WorkflowPresentation {
+    static var modalLevel: NSWindow.Level { NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2) }
 }

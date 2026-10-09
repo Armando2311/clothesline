@@ -35,6 +35,7 @@ final class CollectionDragView: NSView, NSDraggingSource {
     }
     required init?(coder: NSCoder) { fatalError("not supported") }
     override func mouseDown(with event: NSEvent) {
+        focusCollection()
         start = convert(event.locationInWindow,from: nil); wasSelected = model.selectedIDs.contains(item.id)
         if event.clickCount == 2 { open(); start = nil; return }
         if event.modifierFlags.contains(.command) {
@@ -56,8 +57,16 @@ final class CollectionDragView: NSView, NSDraggingSource {
             guard let writer = DragWriters.writer(for: item,model: model) else { return nil }
             draggingIDs.append(item.id)
             let drag = NSDraggingItem(pasteboardWriter: writer)
-            let icon = model.url(for: item).map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(systemSymbolName: "doc",accessibilityDescription: item.title)!
-            drag.setDraggingFrame(CGRect(x: point.x-24,y: point.y-24,width: 48,height: 48),contents: icon)
+            let image: NSImage
+            if let url = model.url(for: item),
+               let cached = model.thumbnails.cached(for: url, size: CGSize(width: 160, height: 110), scale: 2) {
+                image = NSImage(cgImage: cached, size: CGSize(width: cached.width, height: cached.height))
+            } else {
+                image = model.url(for: item).map { NSWorkspace.shared.icon(forFile: $0.path) }
+                    ?? NSImage(systemSymbolName: item.kind == .text ? "note.text" : item.kind == .link ? "link" : "doc", accessibilityDescription: item.title)!
+            }
+            let size = CollectionDragPreview.size(for: image.size)
+            drag.setDraggingFrame(CGRect(x: point.x-size.width/2, y: point.y-size.height/2, width: size.width, height: size.height), contents: image)
             return drag
         }
         guard !dragItems.isEmpty else { return }
@@ -74,6 +83,7 @@ final class CollectionDragView: NSView, NSDraggingSource {
         else if operation != [], model.settings.afterDragOut == .removeFromLine { model.remove(Set(draggingIDs),style: .delivered) }
     }
     override func rightMouseDown(with event: NSEvent) {
+        focusCollection()
         if !model.selectedIDs.contains(item.id) { model.selectedIDs = [item.id] }
         if let menu = actions.view?.actions.menu(for: model.selectedItems) {
             if let preview = menu.items.first(where: { $0.title == "Quick Look" }) { preview.target = self; preview.action = #selector(previewSelected) }
@@ -83,6 +93,26 @@ final class CollectionDragView: NSView, NSDraggingSource {
     }
     @objc private func previewSelected() { actions.preview(from: self) }
     @objc private func shareSelected() { actions.share(from: self) }
-    override func accessibilityPerformPress() -> Bool { model.selectedIDs = [item.id]; return true }
+    override func accessibilityPerformPress() -> Bool {
+        model.selectedIDs = [item.id]
+        focusCollection()
+        return true
+    }
+    private func focusCollection() {
+        guard let content = window?.contentView, let keyboard = CollectionKeyboardView.find(in: content) else { return }
+        keyboard.anchorID = item.id
+        window?.makeFirstResponder(keyboard)
+    }
     private func open() { if item.kind == .text { actions.note(item) } else { actions.view?.actions.open([item]) } }
+}
+
+
+enum CollectionDragPreview {
+    static func size(for source: CGSize) -> CGSize {
+        guard source.width > 0, source.height > 0, source.width.isFinite, source.height.isFinite else {
+            return CGSize(width: 48, height: 48)
+        }
+        let scale = 96 / max(source.width, source.height)
+        return CGSize(width: source.width * scale, height: source.height * scale)
+    }
 }

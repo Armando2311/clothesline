@@ -192,7 +192,7 @@ public struct PanelPlacement: Equatable, Sendable {
     ///   - safeAreaTop: `NSScreen.safeAreaInsets.top` (non-zero on notched displays).
     ///   - notchRect: the camera-housing rect between `auxiliaryTopLeftArea` and
     ///     `auxiliaryTopRightArea`, if available.
-    public init(screenFrame: CGRect, visibleFrame: CGRect, safeAreaTop: Double, notchRect: CGRect?, height: Double, sideMargin: Double = 8) {
+    public init(screenFrame: CGRect, visibleFrame: CGRect, safeAreaTop: Double, notchRect: CGRect?, height: Double, sideMargin: Double = 8, verticalOffset: Double = 0) {
         // Hang below the menu bar. If the menu bar is hidden (auto-hide or a
         // full-screen space) visibleFrame reaches the top, but on a notched
         // display we still have to stay below the camera housing.
@@ -201,9 +201,11 @@ public struct PanelPlacement: Equatable, Sendable {
         top = min(top, Double(screenFrame.maxY))
         let width = Double(screenFrame.width) - sideMargin * 2
         let h = min(height, max(140, top - Double(screenFrame.minY)))
-        let origin = CGPoint(x: Double(screenFrame.minX) + sideMargin, y: top - h)
+        let maximumOffset = max(0, top - h - Double(visibleFrame.minY))
+        let offset = verticalOffset.isFinite ? min(maximumOffset, max(0, verticalOffset)) : 0
+        let origin = CGPoint(x: Double(screenFrame.minX) + sideMargin, y: top - h - offset)
         self.frame = CGRect(x: origin.x, y: origin.y, width: width, height: h)
-        if let notch = notchRect, notch.width > 0 {
+        if let notch = notchRect, notch.width > 0, offset == 0 {
             self.hasNotch = true
             self.notchCenterX = Double(notch.midX) - Double(origin.x)
         } else {

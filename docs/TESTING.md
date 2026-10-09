@@ -2,12 +2,26 @@
 
 This file separates what has been **verified automatically**, what was **inspected
 visually** from rendered output, and what **still needs a person at a Mac**. The app was
-developed in a Linux container without a display; all macOS verification ran on GitHub
-Actions `macos-15` runners.
+originally developed in a Linux container; the current workflow upgrade also has local macOS verification.
+
+## Current local verification — 2026-10-08
+
+The workflow upgrade and redesign were built on a real Mac using Xcode 26.3 and macOS 26.5. Historical CI measurements below describe the original baseline, not the current build's memory or performance.
+
+- `swift test`: 85 tests, including core, images/exports, OCR, collection navigation and native line regressions. Current result recorded after the final review pass.
+- App `--self-test`: 27 checks.
+- Xcode Debug build succeeds with DerivedData under `/tmp` (the Documents file provider adds Finder metadata that can prevent signing generated bundles).
+- Rendered preview includes four illustrated themes, two Compact themes, selection, empty state and actual AppKit-cached SwiftUI toolbar controls. Portrait proportions and 2x bitmap dimensions also have regression coverage.
+- Independent review findings addressed: source image overwrite/aliases, native modal ordering, and stale OCR after modifying an image while search stays active.
+- Interrupted onboarding remains pending until Get Started. Screenshot e2e script explicitly completes onboarding through the launch argument domain for its test process rather than changing the user's saved completion preference.
+
+Native pointer checks confirmed vertical grip movement and saved position, survival after clicking Xcode, explicit bottom-button close, image number/redaction gestures, accepted derivative Replace, and visible Save/Open panels above the persistent line. The QA app used a separate bundle identifier and sample state.
+
+Native controller/responder tests cover vertical motion, losing key focus, explicit close, search filtering without deletion animation, arrow navigation, Delete/undo, select-all and text-editing isolation. Pointer-driven file dragging, additional display/Dock configurations, signed release/notarization and VoiceOver remain hardware verification items. The line now stays open after screenshots, outside clicks and drops until explicitly toggled or closed; older auto-hide checklist expectations below are superseded.
 
 ## 1. Automated (runs on every push) — all passing
 
-Latest green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.
+Historical baseline green run: GitHub Actions `Build & Test` #10, commit `f3bc0c7`, `macos-15` runner + `ubuntu-latest`.
 
 | Check | Where | Result |
 |---|---|---|
@@ -56,7 +70,7 @@ Run on real hardware. Record macOS version and Mac model for each run.
 - [ ] Chrome / Firefox: image and link.
 - [ ] Photos: drag a photo (file promise → owned copy).
 - [ ] Mail: drag an attachment.
-- [ ] Drag a file to the very top edge of the screen with the line hidden → it peeks; drop → item hangs; drag away without dropping → it hides.
+- [ ] Drag a file to the very top edge of the screen with the line hidden → it peeks; drop → item hangs; drag away without dropping → it stays until explicitly closed.
 - [ ] Insertion gap opens where the item will land.
 
 ### Drag and drop out

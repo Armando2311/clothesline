@@ -13,6 +13,7 @@ final class WelcomeWindow {
         window.contentViewController = NSHostingController(rootView: WelcomeView { [weak self] in
             self?.window?.orderOut(nil)
             UserDefaults.standard.set(true,forKey: "didCompleteWorkflowWelcome")
+            UserDefaults.standard.set(true,forKey: "didShowWelcome")
             let action = self?.completion; self?.completion = nil; action?()
         })
         window.center(); self.window = window

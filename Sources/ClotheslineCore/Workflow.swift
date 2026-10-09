@@ -3,7 +3,7 @@ import Foundation
 public enum AppearanceStyle: String, Codable, CaseIterable, Sendable {
     case illustrated, compact
     public var displayName: String { self == .compact ? "Compact" : "Illustrated" }
-    public var panelHeight: Double { self == .compact ? 202 : 292 }
+    public var panelHeight: Double { self == .compact ? 190 : 210 }
 }
 
 public enum ItemSearch {
@@ -71,8 +71,18 @@ public enum ExportNames {
         let last = value.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").last ?? ""
         let chars = last.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && !":/\\".unicodeScalars.contains($0) }
         let cleaned = String(String.UnicodeScalarView(chars)).trimmingCharacters(in: CharacterSet(charactersIn: ". "))
-        return cleaned.isEmpty ? "Item" : String(cleaned.prefix(180))
+        let possibleExtension = (cleaned as NSString).pathExtension
+        let ext = possibleExtension.utf8.count <= 32 ? possibleExtension : ""
+        let base = ext.isEmpty ? cleaned : (cleaned as NSString).deletingPathExtension
+        let suffix = ext.isEmpty ? "" : "." + ext
+        var result = ""
+        for character in base {
+            guard result.utf8.count + String(character).utf8.count <= 180 - suffix.utf8.count else { break }
+            result.append(character)
+        }
+        return (result.isEmpty ? "Item" : result) + suffix
     }
+
     public static func unique(_ value: String, used: inout Set<String>) -> String {
         let name = safe(value)
         let ext = (name as NSString).pathExtension

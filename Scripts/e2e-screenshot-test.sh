@@ -49,7 +49,7 @@ fail() { echo "FAIL: $*"; titles "$STATE" || true; exit 1; }
 
 # ---- Phases 1-4: explicit folder --------------------------------------------
 SHOTS="$TMP/shots"; STATE="$TMP/state"; mkdir -p "$SHOTS" "$STATE"
-"$BIN" --state-dir "$STATE" --screenshot-folder "$SHOTS" &
+"$BIN" --state-dir "$STATE" --screenshot-folder "$SHOTS" -didCompleteWorkflowWelcome YES &
 PID=$!
 sleep 4
 
@@ -79,7 +79,7 @@ kill $PID; wait $PID 2>/dev/null || true
 # ---- Phase 5: follow the macOS screenshot location ---------------------------
 DIR1="$TMP/loc1"; DIR2="$TMP/loc2"; STATE="$TMP/state2"; mkdir -p "$DIR1" "$DIR2" "$STATE"
 defaults write com.apple.screencapture location "$DIR1"
-"$BIN" --state-dir "$STATE" &
+"$BIN" --state-dir "$STATE" -didCompleteWorkflowWelcome YES &
 PID=$!
 sleep 4
 fake_screenshot "$DIR1" "Screenshot in one.png"

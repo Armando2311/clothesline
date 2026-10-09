@@ -79,7 +79,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var toggleShortcut: Shortcut? = .defaultToggle
     public var hangClipboardShortcut: Shortcut? = .defaultHangClipboard
     public var showMenuBarIcon: Bool = true
-    public var hideWhenClickingOutside: Bool = true
+    /// Legacy preference retained for decoding; outside clicks never dismiss the line.
+    public var hideWhenClickingOutside: Bool = false
     public var revealOnDragToTopEdge: Bool = true
 
     // Screenshots

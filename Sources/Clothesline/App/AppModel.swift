@@ -21,21 +21,39 @@ final class AppModel: ObservableObject {
     @Published private(set) var canUndoRemoval = false
 
     @Published var query = "" {
-        didSet { reconcileSelection(); refreshOCR() }
+        didSet {
+            reconcileSelection()
+            refreshOCR()
+        }
     }
     @Published var selectedIDs: Set<UUID> = []
     @Published private(set) var recognizedText: [UUID: String] = [:]
-    private let ocr = OCRIndex()
+    private let ocr: OCRIndex
+    private var ocrInputsTask: Task<Void, Never>?
     var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var visibleItems: [HangingItem] { ItemSearch.results(board: board, query: query, recognizedText: recognizedText) }
     var selectedItems: [HangingItem] { visibleItems.filter { selectedIDs.contains($0.id) } }
     private func reconcileSelection() { selectedIDs.formIntersection(Set(visibleItems.map(\.id))) }
     func refreshOCR() {
-        guard isSearching else { ocr.stop(); return }
-        ocr.refresh(board.items.compactMap { item in
-            guard [.image, .screenshot].contains(item.kind), let url = url(for: item) else { return nil }
-            return (item.id, url)
-        })
+        ocrInputsTask?.cancel()
+        ocr.stop()
+        guard isSearching else { return }
+        let references = board.items.compactMap { item -> (UUID, FileReference)? in
+            guard [.image,.screenshot].contains(item.kind), let file = item.file else { return nil }
+            return (item.id,file)
+        }
+        let files = self.files
+        ocrInputsTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
+            let inputs = await Task.detached(priority: .utility) {
+                references.compactMap { id,reference -> (UUID, URL)? in
+                    guard let url = files.resolve(reference).url else { return nil }
+                    return (id,url)
+                }
+            }.value
+            guard !Task.isCancelled, let self, self.isSearching else { return }
+            self.ocr.refresh(inputs)
+        }
     }
 
     /// How the most recent removal should look on screen.
@@ -63,7 +81,8 @@ final class AppModel: ObservableObject {
 
     private static let settingsKey = "settings.v1"
 
-    init(store: BoardStore = BoardStore(directory: BoardStore.defaultDirectory())) {
+    init(store: BoardStore = BoardStore(directory: BoardStore.defaultDirectory()), ocrIndex: OCRIndex? = nil) {
+        self.ocr = ocrIndex ?? OCRIndex(debounceNanoseconds: 0)
         self.store = store
         switch store.load() {
         case .loaded(let b), .fresh(let b):
@@ -117,6 +136,7 @@ final class AppModel: ObservableObject {
     /// Called at quit: applies quit-time cleanup, deletes owned copies whose
     /// removal can no longer be undone, and writes the final state.
     func prepareForTermination() {
+        ocrInputsTask?.cancel()
         ocr.stop()
         if settings.retention.clearUnpinnedOnQuit {
             for line in board.lines {

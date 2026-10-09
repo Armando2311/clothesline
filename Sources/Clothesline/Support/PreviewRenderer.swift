@@ -65,6 +65,18 @@ enum PreviewRenderer {
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
             if let img = snapshot(view, size: size) { rows.append(img) }
         }
+        // Both compact themes exercise aspect fitting, Retina drawing and the native toolbar.
+        model.settings.appearanceStyle = .compact
+        let compactSize = CGSize(width: size.width,height: AppearanceStyle.compact.panelHeight)
+        view.frame = NSRect(origin: .zero,size: compactSize)
+        for choice in [ThemeChoice.summerAfternoon,.midnight] {
+            model.settings.theme = choice
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            view.configure(notchCenterX: nil)
+            if let img = snapshot(view,size: compactSize) { rows.append(img) }
+        }
+        model.settings.appearanceStyle = .illustrated
+        view.frame = NSRect(origin: .zero,size: size)
         // Empty line on a display without a notch.
         model.settings.theme = .summerAfternoon
         model.remove(Set(model.activeItems.map(\.id)), undoable: false)
@@ -92,6 +104,20 @@ enum PreviewRenderer {
         }
         layer.layoutIfNeeded()
         layer.render(in: ctx)
+        // NSHostingView's native control surfaces don't appear in CALayer.render.
+        // Draw its AppKit cache separately over the illustrated snapshot.
+        for control in view.subviews {
+            if let rep = control.bitmapImageRepForCachingDisplay(in: control.bounds) {
+                control.cacheDisplay(in: control.bounds,to: rep)
+                if let image = rep.cgImage {
+                    ctx.saveGState()
+                    ctx.translateBy(x: control.frame.minX,y: control.frame.maxY)
+                    ctx.scaleBy(x: 1,y: -1)
+                    ctx.draw(image,in: CGRect(origin: .zero,size: control.frame.size))
+                    ctx.restoreGState()
+                }
+            }
+        }
         return ctx.makeImage()
     }
 
