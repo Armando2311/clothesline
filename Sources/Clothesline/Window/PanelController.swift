@@ -22,6 +22,7 @@ final class PanelController: NSObject, LineViewDelegate {
     let lineView: LineView
     private(set) var isVisible = false
     private var reveal: Reveal = .explicit
+    private var visibilityTransition = 0
     private var escapeMonitor: Any?
     private var glassContainer: NSView?
     private var dragMonitor: Any?
@@ -40,6 +41,7 @@ final class PanelController: NSObject, LineViewDelegate {
     init(model: AppModel) {
         self.model = model
         lineView = LineView(model: model)
+        lineView.autoresizingMask = [.width, .height]
         super.init()
         panel.contentView = lineView
         lineView.delegate = self
@@ -49,11 +51,11 @@ final class PanelController: NSObject, LineViewDelegate {
         nc.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(accessibilityChanged),name:NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,object:nil)
         installDragEdgeMonitor()
-        model.$board.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
-        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
-        model.$searchFilters.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
-        model.$collapsedGroupIDs.receive(on:RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in:&cancellables)
-        model.$settings.removeDuplicates { a,b in a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.cardScale == b.cardScale && a.panelLayout == b.panelLayout && a.noThemeClickThrough == b.noThemeClickThrough }.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in: &cancellables)
+        model.$board.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false, animated: true) }.store(in: &cancellables)
+        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false, animated: true) }.store(in: &cancellables)
+        model.$searchFilters.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false, animated: true) }.store(in: &cancellables)
+        model.$collapsedGroupIDs.receive(on:RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false, animated: true) }.store(in:&cancellables)
+        model.$settings.removeDuplicates { a,b in a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.cardScale == b.cardScale && a.panelLayout == b.panelLayout && a.noThemeClickThrough == b.noThemeClickThrough }.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(animated: true) }.store(in: &cancellables)
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let keyCode = event.keyCode
             let windowNumber = event.windowNumber
@@ -82,10 +84,16 @@ final class PanelController: NSObject, LineViewDelegate {
         let wasVisible = isVisible
         if !wasVisible || screen != currentScreen { place(on: screen) }
         if !wasVisible {
+            visibilityTransition += 1
             reveal = how
             lineView.resetAfterDisappear()
-            panel.alphaValue = 1
+            if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.reduced ? 0.12 : 0.2
+                context.timingFunction = Motion.timing
+                panel.animator().alphaValue = 1
+            }
             isVisible = true
             syncClickThroughMonitoring()
             lineView.willAppear(animated: true)
@@ -106,6 +114,8 @@ final class PanelController: NSObject, LineViewDelegate {
     func hide() {
         guard isVisible else { return }
         isVisible = false
+        visibilityTransition += 1
+        let transition = visibilityTransition
         stopClickThroughMonitoring()
         if QLPreviewPanel_isVisible() { QLPreviewPanel_close() }
         let duration = lineView.animateDisappear()
@@ -116,7 +126,7 @@ final class PanelController: NSObject, LineViewDelegate {
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, !self.isVisible else { return }
+                guard let self, !self.isVisible, self.visibilityTransition == transition else { return }
                 self.panel.orderOut(nil)
                 self.panel.alphaValue = 1
                 self.lineView.resetAfterDisappear()
@@ -132,7 +142,7 @@ final class PanelController: NSObject, LineViewDelegate {
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    private func place(on screen: NSScreen, force: Bool = true) {
+    private func place(on screen: NSScreen, force: Bool = true, animated: Bool = false) {
         currentScreen = screen
         var notch: CGRect?
         if #available(macOS 12.0, *), screen.safeAreaInsets.top > 0,
@@ -163,8 +173,16 @@ final class PanelController: NSObject, LineViewDelegate {
         if !force, panel.frame == placement.frame, lineView.frame.size == placement.frame.size,
            placedNotchCenterX == placement.notchCenterX { return }
         placedNotchCenterX = placement.notchCenterX
-        panel.setFrame(placement.frame, display: false)
-        lineView.frame = NSRect(origin: .zero, size: placement.frame.size)
+        if animated && isVisible && !Motion.reduced && !lineView.hasActiveDrag && panel.frame.size != placement.frame.size {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Motion.duration()
+                context.timingFunction = Motion.timing
+                panel.animator().setFrame(placement.frame, display: true)
+            }
+        } else {
+            panel.setFrame(placement.frame, display: false)
+            lineView.frame = NSRect(origin: .zero, size: placement.frame.size)
+        }
         lineView.configure(notchCenterX: placement.notchCenterX, canvasWidth: canvasWidth)
     }
 
@@ -172,9 +190,9 @@ final class PanelController: NSObject, LineViewDelegate {
 
     /// - Parameter force: re-place even if the panel's frame would not change
     ///   (settings such as card size affect the layout inside the same frame).
-    func refreshLayout(force: Bool = true) {
+    func refreshLayout(force: Bool = true, animated: Bool = false) {
         if force { refreshEnvironment() }
-        if isVisible { place(on: currentScreen ?? targetScreen(), force: force) }
+        if isVisible { place(on: currentScreen ?? targetScreen(), force: force, animated: animated) }
     }
 
     /// Put the interactive line inside native glass, preserving its responder and drag surface.

@@ -83,6 +83,11 @@ struct RecipeView: View {
                 Button("Export") { runExport() }.keyboardShortcut(.defaultAction).disabled(busy || resolving || destination == nil || items.isEmpty || estimateError != nil || estimating)
             }
         }
+        .premiumAnimation(value: busy)
+        .premiumAnimation(value: result?.url)
+        .premiumAnimation(value: resolving)
+        .premiumAnimation(value: options.recipe)
+        .premiumAnimation(value: options.maximumImageBytes != nil)
         .padding(22).frame(minWidth: 620,minHeight: 560)
         .alert("Could not export",isPresented: Binding(get: { error != nil },set: { if !$0 { error = nil } })) { Button("OK") { error = nil } } message: { Text(error ?? "") }
         .task {

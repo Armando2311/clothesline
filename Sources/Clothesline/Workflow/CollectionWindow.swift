@@ -26,9 +26,12 @@ struct CollectionView: View {
                             .cornerRadius(10).overlay(RoundedRectangle(cornerRadius: 10).stroke(model.selectedIDs.contains(item.id) ? Color.accentColor : .clear,lineWidth: 2))
                             .contentShape(Rectangle())
                             .overlay(CollectionDragSurface(model: model,item: item,actions: actions))
+                            .premiumAnimation(value: model.selectedIDs.contains(item.id))
+                            .transition(.opacity)
                             .id(item.id)
                         }
                     }
+                    .premiumAnimation(value: model.visibleItems.map(\.id))
                     .background(GeometryReader { gridGeometry in
                         CollectionKeyboardSurface(model: model, actions: actions,
                             columns: max(1, Int((gridGeometry.size.width + 14) / 174)),
@@ -38,7 +41,7 @@ struct CollectionView: View {
                     if model.visibleItems.isEmpty { Text(model.isSearching ? "No matching items. Try another word." : "Drop files on your line to get started.").foregroundStyle(.secondary).padding(40) }
                 }
                 .onChange(of: keyboardFocusID) { id in
-                    if let id { proxy.scrollTo(id) }
+                    if let id { withAnimation(Motion.swiftUI) { proxy.scrollTo(id) } }
                 }
             }
             HStack { Text("Arrow keys to navigate · Space to preview · ⌘-click to select several items · Double-click to open · Originals stay untouched").font(.caption).foregroundStyle(.secondary); Spacer() }.padding(12)
@@ -54,6 +57,7 @@ private struct CollectionThumbnail: View {
             if let image { Image(nsImage: image).resizable().scaledToFit() }
             else { Image(systemName: item.kind == .text ? "note.text" : item.kind == .link ? "link" : "doc").font(.system(size: 42)).foregroundStyle(.secondary) }
         }
+        .premiumAnimation(value: image != nil)
         .overlay(alignment: .topLeading) { if let availability = model.availability[item.id], availability != .available { Text(availability == .missing ? "MISSING" : "OFFLINE").font(.caption.bold()).foregroundStyle(.red) } }
         .task(id: item.file?.path) {
             image = nil

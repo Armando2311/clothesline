@@ -16,7 +16,7 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
         window.title = title; window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: content())
         window.setContentSize(size); window.center(); windows[key] = window
-        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true); Motion.present(window)
     }
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }

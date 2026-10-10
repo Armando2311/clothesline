@@ -61,6 +61,10 @@ struct ImageEditor: View {
                 Button("Save Result…") { output(.save) }.keyboardShortcut("s")
             }.disabled(working || source == nil).padding(18)
         }
+        .premiumAnimation(value: tool)
+        .premiumAnimation(value: format)
+        .premiumAnimation(value: limitEnabled)
+        .premiumAnimation(value: working)
         .frame(minWidth: 850,minHeight: 600)
         .alert("Could not prepare the image",isPresented: Binding(get: { error != nil },set: { if !$0 { error = nil } })) { Button("OK") { error = nil } } message: { Text(error ?? "") }
         .task {

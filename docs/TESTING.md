@@ -21,6 +21,12 @@ The idle wake-up count reported by `top` on the CI VM was 1 in both runs, even w
 
 Not measured: idle wake-ups and energy impact on real hardware (needs Activity Monitor or `powermetrics` on a Mac).
 
+## Motion pass — 2026-10-10
+
+Based on Claude `8e4e748`, `codex/premium-motion` passes 149 local tests and 28 native self-test checks; Xcode Debug and standalone Release builds succeed. Seven motion regressions cover rapid workspace handoffs/cleanup, hide during a switch, selection/hover geometry, window frame preservation, reduced-motion travel, real async status expiry and close/reopen completion safety. Independent review caught the initial empty status banner; it was fixed and covered before installation.
+
+Isolated native QA used an eight-item Clothesline workspace and a two-item Work workspace. Switching and rapid repeated switching reached the correct final cards and fitted widths; keyboard search kept the toolbar accessible; Workspace opened with correct contents and focus. These checks verify behavior and layout, not measured frame pacing or an Instruments performance profile. Shared motion applies to the collection/editor/export/onboarding controls; native OS save/open/share/Quick Look retain system behavior. See docs/MOTION.md for the interaction audit. The local app is ad hoc signed for testing, not notarized distribution.
+
 ## Premium branch verification — 2026-10-10
 
 On `codex/clothesline-premium-experience`, the final local suite passed **129 tests with zero failures**, the native app self-test passed **28 checks**, and the Xcode Debug build succeeded. Core coverage includes older settings/presets decoding, exact export limits and cancellation, search filters, geometry, shake detection, workspace/rule persistence, stable folder writes and bounded activity. Native regressions cover fitted/full-width geometry, click-through hit areas, grouped insertion, explicit drop destinations, retained owned copies after relaunch, OCR copying without a prior search and persistent save-error feedback.
