@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Test/automation overrides (not persisted):
     ///   --state-dir <dir>          keep state somewhere other than Application Support
     ///   --screenshot-folder <dir>  watch this folder instead of the macOS setting
+    ///   --show-line                open the line right after launch (idle measurements)
     private static func argument(_ name: String) -> String? {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -57,6 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         model.revalidate()
         folderRules.start()
+        if ProcessInfo.processInfo.arguments.contains("--show-line") {
+            after(0.5) { [weak self] in self?.panel.show(.explicit) }
+        }
 
         // Record first launch only after the guide completes.
         let firstLaunchKey = "didShowWelcome"
