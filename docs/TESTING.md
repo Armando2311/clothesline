@@ -4,6 +4,23 @@ This file separates what has been **verified automatically**, what was **inspect
 visually** from rendered output, and what **still needs a person at a Mac**. The app was
 originally developed in a Linux container; the current workflow upgrade also has local macOS verification.
 
+## Efficiency and privacy fixes — 2026-10-10
+
+Measured on the GitHub Actions `macos-15` runner, same workflow, before (`e6d3f2c`) and after the fixes:
+
+| | Before | After |
+|---|---|---|
+| Unit tests | 129 pass | 140 pass, 0 failures |
+| Idle CPU, line open, 10 s sample (`Scripts/smoke-test.sh`) | 0.6% | 0.1% |
+| Idle CPU, line hidden | 0.0% | 0.0% |
+| Native self-test / screenshot end-to-end | 28 / 5 pass | 28 / 5 pass |
+
+The idle wake-up count reported by `top` on the CI VM was 1 in both runs, even with the old 80 ms timer running, so it is not used as a pass/fail figure; CPU is. `EfficiencyPrivacyTests` covers each fix directly: pointer tracking runs only with No Theme click-through on, the folder watcher exists only while an enabled folder rule exists and collects a new file without polling, resizing the line renders no new artwork, clearing history releases owned copies and recognized text, recognized text is pruned when its image leaves the line, and a burst of 20 additions causes no history write until flushed (then one).
+
+`OCRReviewTests.testStopDuringDebouncePublishesNothingAndCanResume` failed once on unchanged `main` code (a 50 ms sleep raced the 150 ms debounce on a slow runner). The test now uses a 1 s debounce; the product code is unchanged.
+
+Not measured: idle wake-ups and energy impact on real hardware (needs Activity Monitor or `powermetrics` on a Mac).
+
 ## Premium branch verification — 2026-10-10
 
 On `codex/clothesline-premium-experience`, the final local suite passed **129 tests with zero failures**, the native app self-test passed **28 checks**, and the Xcode Debug build succeeded. Core coverage includes older settings/presets decoding, exact export limits and cancellation, search filters, geometry, shake detection, workspace/rule persistence, stable folder writes and bounded activity. Native regressions cover fitted/full-width geometry, click-through hit areas, grouped insertion, explicit drop destinations, retained owned copies after relaunch, OCR copying without a prior search and persistent save-error feedback.

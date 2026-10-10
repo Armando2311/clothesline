@@ -130,8 +130,8 @@ final class EfficiencyPrivacyTests: XCTestCase {
         XCTAssertNil(model.recognizedText[ids[0]])
     }
 
-    @MainActor func testHistoryWritesAreCoalesced() throws {
-        try withModel { model, _ in
+    @MainActor func testHistoryWritesAreCoalesced() {
+        withModel { model, _ in
             let before = model.activity.historyWrites
             for i in 0..<20 { _ = model.createNote("Burst \(i)") }
             XCTAssertEqual(model.activity.historyWrites, before, "a burst of additions is not written 20 times")

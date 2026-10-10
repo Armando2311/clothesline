@@ -66,7 +66,7 @@ final class FolderRuleWatcher {
     private struct Candidate: Sendable { let url: URL; let rule: CollectionRule; let size: Int64; let modified: Date }
 
     private func scan() {
-        guard started, let model else { return }
+        guard started, model != nil else { return }
         guard !scanning else { rescanRequested = true; return }
         let folders = activeRules.compactMap { rule -> (CollectionRule,URL)? in
             guard let url = WorkspaceStore.resolve(bookmark: rule.folderBookmark, path: rule.folderPath) else { return nil }
