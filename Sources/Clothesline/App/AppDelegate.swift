@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func systemDidWake() {
+        model.activity.pruneHistory()
         watcher.refresh()
         model.revalidate()
         model.applyRetention()

@@ -29,7 +29,7 @@ final class PanelController: NSObject, LineViewDelegate {
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
     private var currentScreen: NSScreen?
     private var pointerMonitor: Any?
-    private var clickThroughTimer: Timer?
+    private var localPointerMonitor: Any?
     private var externalDragActive = false
     private var shakeGesture = ShakeGesture()
     private var cancellables: Set<AnyCancellable> = []
@@ -49,10 +49,10 @@ final class PanelController: NSObject, LineViewDelegate {
         nc.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
         NSWorkspace.shared.notificationCenter.addObserver(self,selector:#selector(accessibilityChanged),name:NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,object:nil)
         installDragEdgeMonitor()
-        model.$board.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in: &cancellables)
-        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in: &cancellables)
-        model.$searchFilters.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in: &cancellables)
-        model.$collapsedGroupIDs.receive(on:RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in:&cancellables)
+        model.$board.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
+        model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
+        model.$searchFilters.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in: &cancellables)
+        model.$collapsedGroupIDs.receive(on:RunLoop.main).sink { [weak self] _ in self?.refreshLayout(force: false) }.store(in:&cancellables)
         model.$settings.removeDuplicates { a,b in a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.cardScale == b.cardScale && a.panelLayout == b.panelLayout && a.noThemeClickThrough == b.noThemeClickThrough }.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshLayout() }.store(in: &cancellables)
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let keyCode = event.keyCode
@@ -67,8 +67,7 @@ final class PanelController: NSObject, LineViewDelegate {
     }
 
     deinit {
-        clickThroughTimer?.invalidate()
-        for monitor in [escapeMonitor,dragMonitor,mouseDownMonitor,pointerMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
+        for monitor in [escapeMonitor,dragMonitor,mouseDownMonitor,pointerMonitor,localPointerMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
     }
 
     // MARK: - Show / hide
@@ -88,7 +87,7 @@ final class PanelController: NSObject, LineViewDelegate {
             panel.alphaValue = 1
             panel.orderFrontRegardless()
             isVisible = true
-            startClickThroughMonitoring()
+            syncClickThroughMonitoring()
             lineView.willAppear(animated: true)
             model.revalidate()
             screenshotRefresh?()
@@ -107,10 +106,7 @@ final class PanelController: NSObject, LineViewDelegate {
     func hide() {
         guard isVisible else { return }
         isVisible = false
-        clickThroughTimer?.invalidate()
-        clickThroughTimer = nil
-        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor); self.pointerMonitor = nil }
-        panel.ignoresMouseEvents = false
+        stopClickThroughMonitoring()
         if QLPreviewPanel_isVisible() { QLPreviewPanel_close() }
         let duration = lineView.animateDisappear()
         lineView.willDisappear()
@@ -136,7 +132,7 @@ final class PanelController: NSObject, LineViewDelegate {
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
-    private func place(on screen: NSScreen) {
+    private func place(on screen: NSScreen, force: Bool = true) {
         currentScreen = screen
         var notch: CGRect?
         if #available(macOS 12.0, *), screen.safeAreaInsets.top > 0,
@@ -156,18 +152,29 @@ final class PanelController: NSObject, LineViewDelegate {
                                        notchRect: notch, height: model.settings.appearanceStyle.panelHeight + max(0, AdaptivePanel.cardScale(model.settings.cardScale) - 1) * 150, verticalOffset: verticalOffsets[displayKey(screen)] ?? 0)
         let fittedWidth = AdaptivePanel.width(available: placement.frame.width, itemCount: model.ropeItems.count,
             cardWidth: (model.settings.appearanceStyle == .compact ? 138 : 100) * AdaptivePanel.cardScale(model.settings.cardScale), fitted: model.settings.panelLayout == .fitted)
+        let canvasWidth = placement.frame.width
         let inset = (placement.frame.width - fittedWidth) / 2
         placement.frame.origin.x += inset
         placement.frame.size.width = fittedWidth
         placement.notchCenterX = placement.notchCenterX.map { $0 - inset }
+        // Content changes call this on every add or removal; when the panel
+        // keeps its size there is nothing to do (the line view animates the
+        // change itself).
+        if !force, panel.frame == placement.frame, lineView.frame.size == placement.frame.size,
+           placedNotchCenterX == placement.notchCenterX { return }
+        placedNotchCenterX = placement.notchCenterX
         panel.setFrame(placement.frame, display: false)
         lineView.frame = NSRect(origin: .zero, size: placement.frame.size)
-        lineView.configure(notchCenterX: placement.notchCenterX)
+        lineView.configure(notchCenterX: placement.notchCenterX, canvasWidth: canvasWidth)
     }
 
-    func refreshLayout() {
-        refreshEnvironment()
-        if isVisible { place(on: currentScreen ?? targetScreen()) }
+    private var placedNotchCenterX: Double?
+
+    /// - Parameter force: re-place even if the panel's frame would not change
+    ///   (settings such as card size affect the layout inside the same frame).
+    func refreshLayout(force: Bool = true) {
+        if force { refreshEnvironment() }
+        if isVisible { place(on: currentScreen ?? targetScreen(), force: force) }
     }
 
     /// Put the interactive line inside native glass, preserving its responder and drag surface.
@@ -187,7 +194,7 @@ final class PanelController: NSObject, LineViewDelegate {
             glassContainer = nil
         }
         lineView.applyTheme()
-        updateClickThrough()
+        syncClickThroughMonitoring()
     }
 
     @objc private func accessibilityChanged() {
@@ -262,18 +269,41 @@ final class PanelController: NSObject, LineViewDelegate {
 
     // MARK: - Optional empty-space pass-through
 
-    private func startClickThroughMonitoring() {
+    /// Pass-through needs pointer tracking, so it only runs while it can matter:
+    /// the line is open with No Theme and "click through empty space" enabled.
+    /// It is purely event-driven. While the panel ignores the mouse, moves over
+    /// the area are delivered to the app underneath and reach the global
+    /// monitor; while it does not, they reach the local monitor. No timer.
+    private var clickThroughWanted: Bool {
+        isVisible && model.settings.theme == .noTheme && model.settings.noThemeClickThrough
+    }
+
+    private func syncClickThroughMonitoring() {
+        guard clickThroughWanted else {
+            stopClickThroughMonitoring()
+            return
+        }
         if pointerMonitor == nil {
-            pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+            pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updateClickThrough() }
             }
         }
-        clickThroughTimer?.invalidate()
-        // A short visible-only poll handles transitions from an ignored window
-        // back onto a card, where AppKit cannot deliver local tracking events.
-        clickThroughTimer = Timer.scheduledTimer(withTimeInterval: 0.08,repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateClickThrough() }
+        if localPointerMonitor == nil {
+            localPointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+                MainActor.assumeIsolated { self?.updateClickThrough() }
+                return event
+            }
         }
+        updateClickThrough()
+    }
+
+    /// True while pointer monitors for No Theme pass-through are installed.
+    var isTrackingPointerForClickThrough: Bool { pointerMonitor != nil || localPointerMonitor != nil }
+
+    private func stopClickThroughMonitoring() {
+        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor); self.pointerMonitor = nil }
+        if let localPointerMonitor { NSEvent.removeMonitor(localPointerMonitor); self.localPointerMonitor = nil }
+        panel.ignoresMouseEvents = false
     }
 
     private func updateClickThrough() {

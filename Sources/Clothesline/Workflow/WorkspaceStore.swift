@@ -18,15 +18,18 @@ final class WorkspaceStore: ObservableObject {
         var loadError: String?
         do { state = try persistence.load() }
         catch { state = WorkspaceState(); loadError = "Workspace settings could not be read. The damaged file was preserved. \(error.localizedDescription)" }
-        configurations = state.configurations; rules = state.rules; history = state.history; collectedFiles = state.collectedFiles
+        var pruned = state
+        let expired = pruned.prune()
+        configurations = pruned.configurations; rules = pruned.rules; history = pruned.history; collectedFiles = pruned.collectedFiles
         error = loadError
+        if expired && loadError == nil { writeHistory() }
     }
     private var state: WorkspaceState {
         var value = WorkspaceState(); value.configurations = configurations; value.rules = rules
         value.history = history; value.collectedFiles = collectedFiles; return value
     }
-    private func save() {
-        do { try persistence.save(state); error = nil }
+    private func save(_ parts: WorkspacePersistence.Parts = .settings) {
+        do { try persistence.save(state, parts: parts); error = nil }
         catch { self.error = "Could not save workspace settings: \(error.localizedDescription)" }
     }
     func config(for lineID: UUID) -> WorkspaceConfiguration? { configurations.first { $0.lineID == lineID } }
@@ -42,7 +45,22 @@ final class WorkspaceStore: ObservableObject {
     func recordExport(items: [HangingItem], resultURL: URL, options: RecipeOptions) {
         record(ActivityEntry(action: .exported, items: items, resultPath: resultURL.path, recipeOptions: options))
     }
-    private func record(_ entry: ActivityEntry) { var value = state; value.record(entry); history = value.history; save() }
+    /// History is a convenience log, so bursts of activity (a folder rule
+    /// collecting 50 files, a multi-item drop) are written once, a moment later.
+    /// `flush()` runs at quit; settings and rules are still written immediately.
+    private let historySave = Delayed()
+    private(set) var historyWrites = 0
+    private func record(_ entry: ActivityEntry) {
+        var value = state; value.record(entry); history = value.history
+        historySave.schedule(after: 1) { [weak self] in self?.writeHistory() }
+    }
+    private func writeHistory() { historySave.cancel(); historyWrites += 1; save(.history) }
+    func flush() { if historySave.isPending { writeHistory() } }
+    /// Forgets all history. Clothesline-owned copies it was retaining become
+    /// eligible for cleanup (the caller runs it).
+    func clearHistory() { history = []; writeHistory() }
+    /// Applies the retention window (e.g. at wake or on a long-running session).
+    func pruneHistory() { var value = state; if value.prune() { history = value.history; writeHistory() } }
     var retainedItems: [HangingItem] { state.retainedItems }
     func destination(for fileURL: URL?, source: ItemSource, kind: ItemKind, defaultLineID: UUID, validLineIDs: Set<UUID>) -> UUID {
         state.destination(for: fileURL, source: source, kind: kind, defaultLineID: defaultLineID, validLineIDs: validLineIDs)

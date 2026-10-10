@@ -18,6 +18,7 @@ final class SkyLayer: CALayer {
     private let rim = CAGradientLayer()
     private let emitter = CAEmitterLayer()
     private var configuredKey: String?
+    private var renderedArtKey: String?
 
     override init() {
         super.init()
@@ -57,10 +58,15 @@ final class SkyLayer: CALayer {
         return p
     }
 
-    func configure(theme: Theme, skyRect: CGRect, scale: CGFloat) {
-        let key = "\(theme.id)-\(Int(skyRect.width))x\(Int(skyRect.height))@\(scale)"
-        guard key != configuredKey else { return }
-        configuredKey = key
+    /// - Parameter canvasWidth: the width the artwork is drawn at (the display's
+    ///   full width). A fitted panel narrower than that shows the centre of the
+    ///   same picture, so resizing the panel only moves layers and redraws nothing.
+    func configure(theme: Theme, skyRect: CGRect, canvasWidth: CGFloat? = nil, scale: CGFloat) {
+        let canvas = max(canvasWidth ?? skyRect.width, skyRect.width)
+        let artKey = "\(theme.id)-\(Int(canvas))x\(Int(skyRect.height))@\(scale)"
+        let geometryKey = artKey + "-\(Int(skyRect.width))"
+        guard geometryKey != configuredKey else { return }
+        configuredKey = geometryKey
         frame = skyRect
         contentsScale = scale
         let local = CGRect(origin: .zero, size: skyRect.size)
@@ -72,35 +78,41 @@ final class SkyLayer: CALayer {
         let mask = CAShapeLayer()
         mask.path = shape
         content.mask = mask
-
         gradient.frame = local
-        gradient.colors = [theme.skyTop.cgColor, theme.skyMiddle.cgColor, theme.skyBottom.cgColor]
-        gradient.locations = [0, 0.55, 1]
-        gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        gradient.endPoint = CGPoint(x: 0.5, y: 1)
 
-        // Sun or moon glow as a large radial gradient.
-        let radius = max(local.width, local.height) * theme.glowRadius
-        let center = CGPoint(x: theme.glowPosition.x * local.width, y: theme.glowPosition.y * local.height)
+        // Everything drawn is positioned on a canvas centred in the panel.
+        let canvasRect = CGRect(x: (local.width - canvas) / 2, y: 0, width: canvas, height: local.height)
+        let radius = max(canvas, local.height) * theme.glowRadius
+        let center = CGPoint(x: canvasRect.minX + theme.glowPosition.x * canvas, y: theme.glowPosition.y * local.height)
         glow.frame = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-        glow.colors = [theme.glowColor.withAlphaComponent(0.85).cgColor, theme.glowColor.withAlphaComponent(0.25).cgColor, theme.glowColor.withAlphaComponent(0).cgColor]
-        glow.locations = [0, 0.18, 1]
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 1, y: 1)
-
-        atmosphere.frame = local
-        atmosphere.contentsScale = scale
-        atmosphere.contents = Artwork.atmosphere(theme: theme, size: local.size, scale: scale)
-
-        // A thin highlight along the bottom rim catches the light.
         rim.frame = CGRect(x: 0, y: local.height - 2, width: local.width, height: 2)
-        rim.colors = [NSColor.white.withAlphaComponent(0).cgColor, NSColor.white.withAlphaComponent(theme.isDark ? 0.12 : 0.35).cgColor]
 
-        configureEmitter(theme: theme, size: local.size, scale: scale)
+        if artKey != renderedArtKey {
+            renderedArtKey = artKey
+            gradient.colors = [theme.skyTop.cgColor, theme.skyMiddle.cgColor, theme.skyBottom.cgColor]
+            gradient.locations = [0, 0.55, 1]
+            gradient.startPoint = CGPoint(x: 0.5, y: 0)
+            gradient.endPoint = CGPoint(x: 0.5, y: 1)
+            glow.colors = [theme.glowColor.withAlphaComponent(0.85).cgColor, theme.glowColor.withAlphaComponent(0.25).cgColor, theme.glowColor.withAlphaComponent(0).cgColor]
+            glow.locations = [0, 0.18, 1]
+            glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+            glow.endPoint = CGPoint(x: 1, y: 1)
+            atmosphere.contentsScale = scale
+            atmosphere.contents = Artwork.atmosphere(theme: theme, size: canvasRect.size, scale: scale)
+            // A thin highlight along the bottom rim catches the light.
+            rim.colors = [NSColor.white.withAlphaComponent(0).cgColor, NSColor.white.withAlphaComponent(theme.isDark ? 0.12 : 0.35).cgColor]
+            configureEmitter(theme: theme, size: canvasRect.size, scale: scale)
+            artRenderCount += 1
+        }
+        atmosphere.frame = canvasRect
+        emitter.frame = canvasRect
     }
 
+    /// Number of times the sky artwork was drawn (regression tests assert that
+    /// resizing the panel does not redraw it).
+    private(set) var artRenderCount = 0
+
     private func configureEmitter(theme: Theme, size: CGSize, scale: CGFloat) {
-        emitter.frame = CGRect(origin: .zero, size: size)
         let cell = CAEmitterCell()
         cell.contents = Artwork.particle(theme: theme, scale: scale)
         cell.name = "ambient"

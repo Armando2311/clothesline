@@ -33,11 +33,7 @@ private actor OCRWorker {
 
     func recognize(_ url: URL) -> String? {
         guard !Task.isCancelled, let before = signature(url) else { return nil }
-        if !loaded {
-            loaded = true
-            if let data = try? Data(contentsOf: cacheURL),
-               let stored = try? JSONDecoder().decode([String: Entry].self, from: data) { entries = stored }
-        }
+        loadIfNeeded()
         let key = before.url.absoluteString
         if let cached = entries[key], cached.signature == before { return cached.text }
         guard !Task.isCancelled, let image = OCRIndex.thumbnail(url),
@@ -48,6 +44,19 @@ private actor OCRWorker {
             let oldest = entries.min { $0.value.signature.modificationDate < $1.value.signature.modificationDate }
             if let oldest { entries.removeValue(forKey: oldest.key) }
         }
+        persist()
+        return text
+    }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        if let data = try? Data(contentsOf: cacheURL),
+           let stored = try? JSONDecoder().decode([String: Entry].self, from: data) { entries = stored }
+    }
+
+    private func persist() {
+        guard !entries.isEmpty else { try? FileManager.default.removeItem(at: cacheURL); return }
         if let data = try? JSONEncoder().encode(entries) {
             do {
                 try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -56,7 +65,42 @@ private actor OCRWorker {
                 // OCR remains available if the cache is unwritable. Never log paths or recognized text.
             }
         }
-        return text
+    }
+
+    static func normalizedPath(_ url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+
+    /// Keeps recognized text only for files that are still on a line. Text read
+    /// from a screenshot must not outlive the screenshot's place on the line.
+    func prune(keepingPaths paths: Set<String>) -> Int {
+        loadIfNeeded()
+        let before = entries.count
+        entries = entries.filter { key, _ in URL(string: key).map { paths.contains(Self.normalizedPath($0)) } ?? false }
+        let removed = before - entries.count
+        if removed > 0 { persist() }
+        return removed
+    }
+
+    func clear() {
+        loaded = true
+        entries = [:]
+        try? FileManager.default.removeItem(at: cacheURL)
+    }
+}
+
+extension OCRIndex {
+    /// Normalizes paths the same way the cache keys are compared.
+    nonisolated static func cacheKeyPath(_ path: String) -> String {
+        OCRWorker.normalizedPath(URL(fileURLWithPath: path))
+    }
+
+    @discardableResult
+    func prune(keepingPaths paths: Set<String>) async -> Int {
+        await worker.prune(keepingPaths: paths)
+    }
+
+    func clear() async {
+        stop()
+        await worker.clear()
     }
 }
 

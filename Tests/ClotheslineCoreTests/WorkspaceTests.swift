@@ -21,13 +21,58 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(reloaded.history.first?.items.first?.text, "Keep me")
         XCTAssertEqual(reloaded.retainedItems.map(\.id), [item.id])
     }
-    func testHistoryRetainsEachOwnedSnapshotWhenReferenceChanges() {
+    func testOnlyRemovalsAndExportsRetainOwnedCopies() {
         var state = WorkspaceState()
         var item = HangingItem(kind: .image, source: .clipboard, title: "Copy", lineID: UUID(), file: FileReference(path: "/owned/first.png", bookmark: nil, ownership: .owned))
         state.record(ActivityEntry(action: .added, items: [item]))
+        XCTAssertTrue(state.retainedItems.isEmpty, "an addition must not keep a copy alive")
         item.file = FileReference(path: "/owned/second.png", bookmark: nil, ownership: .owned)
         state.record(ActivityEntry(action: .removed, items: [item]))
-        XCTAssertEqual(Set(state.retainedItems.compactMap { $0.file?.path }), ["/owned/first.png", "/owned/second.png"])
+        XCTAssertEqual(Set(state.retainedItems.compactMap { $0.file?.path }), ["/owned/second.png"])
+    }
+    func testAdditionsAreLoggedWithoutContent() {
+        let note = HangingItem(kind: .text, source: .clipboard, title: "Password is hunter2", lineID: UUID(), text: "Password is hunter2")
+        let link = HangingItem(kind: .link, source: .drop, title: "Secret doc", lineID: UUID(), link: "https://example.com/private?token=abc")
+        let file = HangingItem(kind: .image, source: .drop, title: "photo", lineID: UUID(), file: FileReference(path: "/Users/me/photo.png", bookmark: Data([1]), ownership: .referenced))
+        let entry = ActivityEntry(action: .added, items: [note, link, file])
+        XCTAssertEqual(entry.items.map(\.title), ["Note", "example.com", "photo"])
+        XCTAssertTrue(entry.items.allSatisfy { $0.text == nil && $0.link == nil && $0.file == nil })
+        XCTAssertEqual(entry.items.map(\.id), [note.id, link.id, file.id])
+        // Removals keep full snapshots so they can be restored.
+        XCTAssertEqual(ActivityEntry(action: .removed, items: [note]).items.first?.text, "Password is hunter2")
+    }
+    func testHistoryExpiresAfterRetentionWindow() throws {
+        var state = WorkspaceState()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let item = HangingItem(kind: .text, source: .manual, title: "x", lineID: UUID(), text: "x")
+        state.history = [ActivityEntry(date: now.addingTimeInterval(-8 * 86400), action: .removed, items: [item])]
+        state.record(ActivityEntry(date: now.addingTimeInterval(-60), action: .removed, items: [item]), now: now)
+        XCTAssertEqual(state.history.count, 1)
+        XCTAssertFalse(state.prune(now: now))
+        XCTAssertTrue(state.prune(now: now.addingTimeInterval(WorkspaceState.retention)))
+        XCTAssertTrue(state.history.isEmpty)
+    }
+    func testHistoryAndSettingsAreStoredSeparatelyAndLegacyHistoryMigrates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let item = HangingItem(kind: .text, source: .manual, title: "x", lineID: UUID(), text: "x")
+        var legacy = WorkspaceState()
+        legacy.rules = [CollectionRule(name: "R", lineID: UUID())]
+        legacy.history = [ActivityEntry(action: .removed, items: [item])]
+        let store = WorkspacePersistence(directory: directory)
+        try JSONEncoder().encode(legacy).write(to: store.url)          // old single-file layout
+        XCTAssertEqual(try store.load(), legacy)
+        try store.save(legacy)
+        let settingsOnly = try JSONDecoder().decode(WorkspaceState.self, from: Data(contentsOf: store.url))
+        XCTAssertTrue(settingsOnly.history.isEmpty, "history must not be duplicated into workspaces.json")
+        XCTAssertEqual(try WorkspacePersistence(directory: directory).load(), legacy)
+        // Saving only history leaves the settings file byte-for-byte unchanged.
+        let before = try Data(contentsOf: store.url)
+        var changed = legacy; changed.history = []
+        try store.save(changed, parts: .history)
+        XCTAssertEqual(try Data(contentsOf: store.url), before)
+        XCTAssertTrue(try WorkspacePersistence(directory: directory).load().history.isEmpty)
     }
     func testWorkspaceArrangementSurvivesPersistence() throws {
         let config = WorkspaceConfiguration(lineID: UUID(), sortOrder: .kind)

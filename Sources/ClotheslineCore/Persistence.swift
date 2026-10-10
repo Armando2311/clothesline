@@ -92,15 +92,25 @@ public final class BoardStore {
 
     /// Removes owned files that no item references any more (e.g. after a crash
     /// between removing an item and deleting its copy).
-    public func collectGarbage(keeping board: Board) {
-        guard let entries = try? fileManager.contentsOfDirectory(at: ownedFilesDirectory, includingPropertiesForKeys: nil) else { return }
+    ///
+    /// - Parameter protectingNewerThan: when set, unreferenced copies modified on
+    ///   or after this date are kept too. Used when a damaged history file may
+    ///   still describe recent removals: those copies stay for the restore window
+    ///   instead of cleanup stopping altogether.
+    public func collectGarbage(keeping board: Board, protectingNewerThan cutoff: Date? = nil) {
+        guard let entries = try? fileManager.contentsOfDirectory(at: ownedFilesDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
         let referenced = Set(board.items.compactMap { item -> String? in
             guard let file = item.file, file.ownership == .owned else { return nil }
             return URL(fileURLWithPath: file.path).deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path
         })
         for entry in entries {
             let path = entry.standardizedFileURL.resolvingSymlinksInPath().path
-            if !referenced.contains(path) { try? fileManager.removeItem(at: entry) }
+            guard !referenced.contains(path) else { continue }
+            if let cutoff {
+                let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                if modified >= cutoff { continue }
+            }
+            try? fileManager.removeItem(at: entry)
         }
     }
 
