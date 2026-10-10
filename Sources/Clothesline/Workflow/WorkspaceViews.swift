@@ -121,7 +121,7 @@ struct ActivityHistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Activity history").font(.title2.bold())
-            Text("The latest 200 additions, removals and exports. Restore rehanges saved notes, links and file references. A deleted original must be located again; retained Clothesline copies remain available while recorded here.").font(.caption).foregroundStyle(.secondary)
+            Text("The last 7 days of additions, removals and exports (up to 200). Removed items can be restored to the line during that time; additions are listed by name only. A deleted original must be located again. Clear history in Settings › About › Privacy.").font(.caption).foregroundStyle(.secondary)
             if activity.history.isEmpty { Text("Activity will appear as you collect and export.").foregroundStyle(.secondary) }
             List(activity.history) { entry in
                 VStack(alignment: .leading, spacing: 5) {

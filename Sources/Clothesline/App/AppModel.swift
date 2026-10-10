@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
     @Published var collapsedGroupIDs:Set<UUID> = []
     let activity: WorkspaceStore
     private let noticeExpiry = Delayed()
+    private let ocrPrune = Delayed()
     private var persistenceError:String?
     private let ocr: OCRIndex
     private var ocrInputsTask: Task<Void, Never>?
@@ -160,6 +161,7 @@ final class AppModel: ObservableObject {
             }
         }
         flushUndo()
+        activity.flush()
         collectOwnedGarbage()
         saveNow()
     }
@@ -311,6 +313,7 @@ final class AppModel: ObservableObject {
             finalize(batch)
         }
         canUndoRemoval = !undoStack.isEmpty
+        ocrPrune.schedule(after: 2) { [weak self] in self?.pruneRecognizedText() }
     }
 
     func clearActiveLine() {
@@ -498,13 +501,33 @@ final class AppModel: ObservableObject {
         catch { notice("Could not save groups: \(error.localizedDescription)") }
     }
     private func collectOwnedGarbage() {
-        // A quarantined history file may still describe removed owned copies.
-        // Preserve those copies until recovery has been resolved explicitly.
-        let names = (try? FileManager.default.contentsOfDirectory(atPath:store.directory.path)) ?? []
-        guard !names.contains(where:{ $0.hasPrefix("workspaces-corrupt-") }) else { return }
         var retained = board
         retained.items.append(contentsOf:activity.retainedItems)
-        store.collectGarbage(keeping:retained)
+        // A history file quarantined within the restore window may describe
+        // removals that can still be restored: keep every copy until it passes.
+        if !WorkspacePersistence.holdsOwnedCopies(in: store.directory) {
+            store.collectGarbage(keeping:retained)
+        }
+        pruneRecognizedText()
+    }
+
+    /// Drops cached recognized text for anything no longer on a line.
+    func pruneRecognizedText() {
+        let onLine = Set(board.items.compactMap { $0.file.map { OCRIndex.cacheKeyPath($0.path) } })
+        let ids = Set(board.items.map(\.id))
+        if recognizedText.keys.contains(where: { !ids.contains($0) }) { recognizedText = recognizedText.filter { ids.contains($0.key) } }
+        let ocr = self.ocr
+        Task { await ocr.prune(keepingPaths: onLine) }
+    }
+
+    /// Settings › Privacy: forget activity history and every piece of text read
+    /// from images. Clothesline-owned copies that only history kept are deleted.
+    func clearHistoryAndRecognizedText() async {
+        activity.clearHistory()
+        recognizedText = [:]
+        await ocr.clear()
+        collectOwnedGarbage()
+        notice("History and recognized text cleared")
     }
 
     func textForCopy(_ items:[HangingItem]) async -> String {

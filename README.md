@@ -14,7 +14,7 @@ they need to go.
   at once if you like.
 * Press **⌃⌥V** to hang whatever is on the clipboard.
 
-Files and recognized text stay on your Mac. No accounts or analytics. The explicit Check for Updates action contacts GitHub.
+Files and recognized text stay on your Mac. No accounts or analytics. Only the explicit Check for Updates action contacts GitHub.
 
 ## Requirements
 
@@ -115,7 +115,8 @@ and automatic clipboard history are not included.
 * **Moving a file or putting it in the Trash** are separate, clearly labelled menu commands
   that always ask first. Trash can be undone from the Trash.
 * Images dropped from a browser, file promises and pasted images have no original file, so
-  Clothesline keeps its own copy. That copy is retained while undo or activity history can restore it, then eligible for cleanup.
+  Clothesline keeps its own copy. After the item leaves the line, that copy is kept for 7 days so the
+  removal can be restored from History, then deleted.
 * If a file is deleted the item shows **MISSING** (use *Locate File…*). If its drive is
   unplugged it shows **OFFLINE** and comes back when the drive does.
 
@@ -168,7 +169,7 @@ Choose **No Theme** in Settings → Appearance to float only the rope and files 
 * **Automatic collections:** source/kind rules route new items; folder rules collect stable writes from the selected folder. Preview a rule before enabling it, and pause it anytime.
 * **Project workspaces:** each line remembers its project context, destination, export preset and sort order. Open Workspace from More.
 * **Focused search:** filter by kind, source, line and date; matching text is highlighted in the collection browser. Copy recognized image text directly or locate an unavailable file.
-* **Recovery and activity:** additions, removals and exports are recorded locally. Restore removed items, reveal export results, or run an export again from More → Activity history.
+* **Recovery and activity:** the last 7 days of additions, removals and exports are recorded locally. Restore removed items, reveal export results, or run an export again from More → Activity history. Additions are logged by name only (no note text, links or file locations). Clear everything in Settings → About → Privacy.
 * **Native finish:** guided onboarding, Reduce Motion/Transparency support and an explicit update checker. Developer ID signing and notarization tooling is documented in [Distribution](docs/RELEASING.md).
 
-New items are saved immediately, persistence failures remain visible, and history keeps app-owned copies recoverable across relaunches. Referenced originals are never modified by collection or preparation. Folder watches are nonrecursive; activity history keeps the latest 200 entries. Signing/notarization requires your Apple distribution credentials; update installation remains explicit.
+New items are saved immediately, persistence failures remain visible, and history keeps app-owned copies recoverable across relaunches. Referenced originals are never modified by collection or preparation. Folder watches are nonrecursive and event-driven (FSEvents, only while a folder rule is enabled); activity history keeps the last 7 days, up to 200 entries. Text recognized in images is kept only while the image is on a line. Signing/notarization requires your Apple distribution credentials; update installation remains explicit.

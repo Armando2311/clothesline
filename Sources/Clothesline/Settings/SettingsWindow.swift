@@ -331,8 +331,11 @@ private struct AboutSettings: View {
                 Button("Check for updates…") { UpdateChecker.shared.check() }
             }
             Section("Privacy") {
-                Text("Everything stays on your Mac. Clothesline has no analytics, no file uploads; update checks contact GitHub and no accounts. Screenshots and files are never uploaded.")
+                Text("Everything stays on your Mac. No accounts, no analytics, and screenshots and files are never uploaded. Only “Check for updates” contacts GitHub, and only when you choose it.")
                     .font(.callout)
+                Text("Activity history keeps removed items restorable for 7 days, then forgets them. Additions are logged by name only. Text read from images is kept only while the image is on a line.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Clear History & Recognized Text…") { confirmClear() }
             }
             Section("Troubleshooting") {
                 LabeledContent("Screenshot folder access") {
@@ -360,6 +363,17 @@ private struct AboutSettings: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: checkFolder)
+    }
+
+    private func confirmClear() {
+        let alert = NSAlert()
+        alert.messageText = "Clear history and recognized text?"
+        alert.informativeText = "Removed items can no longer be restored from History, and text read from images is deleted. Items on your lines and your own files are not affected."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.level = WorkflowPresentation.modalLevel
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await model.clearHistoryAndRecognizedText() }
     }
 
     private func checkFolder() {

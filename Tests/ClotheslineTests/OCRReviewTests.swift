@@ -65,7 +65,9 @@ final class OCRReviewTests: XCTestCase {
     @MainActor func testStopDuringDebouncePublishesNothingAndCanResume() async throws {
         let root = try temporary(), url = root.appendingPathComponent("image.png")
         try image(at: url)
-        let index = OCRIndex(cacheURL: root.appendingPathComponent("ocr.json"), recognizer: { _ in "resumed" })
+        // The debounce must comfortably outlast the 50 ms sleep below even on a
+        // loaded CI machine; with the 150 ms default the sleep could overrun it.
+        let index = OCRIndex(cacheURL: root.appendingPathComponent("ocr.json"), debounceNanoseconds: 1_000_000_000, recognizer: { _ in "resumed" })
         let stopped = expectation(description: "Canceled OCR did not publish")
         stopped.isInverted = true
         index.changed = { _ in stopped.fulfill() }

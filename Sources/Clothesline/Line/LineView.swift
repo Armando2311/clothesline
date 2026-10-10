@@ -202,27 +202,43 @@ final class LineView: NSView {
     // MARK: - Placement & theme
 
     /// Called by the panel controller whenever the panel moves to a display.
-    func configure(notchCenterX: Double?) {
+    func configure(notchCenterX: Double?, canvasWidth: CGFloat? = nil) {
         let changed = notchCenterX != self.notchCenterX
         self.notchCenterX = notchCenterX
+        if let canvasWidth { self.canvasWidth = canvasWidth }
         if changed { rebuildHooks() }
         applyTheme()
         relayout(animated: false)
     }
+
+    /// Width of the display the panel sits on. The sky is drawn at this width
+    /// once; a fitted (narrower) panel shows its centre.
+    private var canvasWidth: CGFloat?
+    /// Set once the theme has been applied for the first time.
+    private var themeApplied = false
+    /// How many times card artwork was rendered (regression tests use this).
+    private(set) var cardRenderCount = 0
+
+    private func configureSky() {
+        let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
+        sky.configure(theme: theme, skyRect: skyRect, canvasWidth: max(canvasWidth ?? bounds.width, bounds.width), scale: scale)
+    }
+
+    var skyArtRenderCount: Int { sky.artRenderCount }
 
     func applyTheme(force: Bool = false) {
         let resolved = Theme.resolve(model.settings.theme, appearance: effectiveAppearance)
         let styleChanged = renderedAppearanceStyle != model.settings.appearanceStyle
         guard force || resolved != theme || styleChanged else { updateAmbient(); updateBreeze(); return }
         renderedAppearanceStyle = model.settings.appearanceStyle
+        themeApplied = true
         theme = resolved
         let compact = model.settings.appearanceStyle == .compact
         let transparent = theme.id == .liquidGlass || theme.id == .noTheme
         sky.isHidden = compact || transparent
         let reducedTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         layer?.backgroundColor = theme.id == .liquidGlass && reducedTransparency ? NSColor.windowBackgroundColor.cgColor : (compact && !transparent ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil)
-        let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
-        sky.configure(theme: theme, skyRect: skyRect, scale: scale)
+        configureSky()
         ropeBase.strokeColor = theme.rope.cgColor
         ropeBase.shadowColor = theme.shadow.cgColor
         ropeTwist.strokeColor = theme.ropeHighlight.withAlphaComponent(0.85).cgColor
@@ -250,12 +266,31 @@ final class LineView: NSView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
-        let changed = newSize != frame.size
+        let old = frame.size
         super.setFrameSize(newSize)
-        if changed {
+        guard newSize != old else { return }
+        guard themeApplied else {
             applyTheme(force: true)
             relayout(animated: false)
+            return
         }
+        // Nothing drawn depends on the width (cards are fixed-size bitmaps, the
+        // sky is drawn at display width), so a resize only re-lays out.
+        // The panel stays centred: when it grows, every point inside it moves by
+        // half the growth. Shift items by that amount so they stay put on screen,
+        // then let them glide to their new places instead of jumping.
+        let dx = (newSize.width - old.width) / 2
+        if old.width > 0, dx != 0 {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for l in itemLayers.values {
+                let current = l.presentation()?.position ?? l.position
+                l.removeAnimation(forKey: "move")
+                l.position = CGPoint(x: current.x + dx, y: l.position.y)
+            }
+            CATransaction.commit()
+        }
+        relayout(animated: isOnScreen && !Motion.reduced && old.width > 0)
     }
 
     @objc private func accessibilityOptionsChanged() {
@@ -516,6 +551,7 @@ final class LineView: NSView {
         let card = model.settings.appearanceStyle == .compact ? Artwork.compactCard(input) : Artwork.card(input)
         let pin = Artwork.clothespin(theme: theme, painted: item.pinned, scale: scale)
         renderedCards[id] = item
+        cardRenderCount += 1
         l.configure(card: card, pin: pin, theme: theme, scale: scale)
         l.isSelected = selection.contains(id)
         l.setAccessibilityDescription(item)
@@ -527,8 +563,7 @@ final class LineView: NSView {
         let width = Double(bounds.width)
         guard width > 0 else { return }
         geometry = LineGeometry(width: width, centerHookX: notchCenterX, sagScale: model.settings.appearanceStyle == .compact ? 0.15 : 0.35)
-        let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
-        sky.configure(theme: theme, skyRect: skyRect, scale: scale)
+        configureSky()
         lineLayer.frame = bounds
         itemsLayer.frame = bounds
         let ropePath = path(for: geometry)
