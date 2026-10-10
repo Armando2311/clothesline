@@ -47,6 +47,14 @@ final class LineView: NSView {
     private var hintLayer: CALayer?
     private let captionLayer = CATextLayer()
     private let lineNameLayer = CATextLayer()
+    private let insertionMarker = CAShapeLayer()
+    private let dragFeedback = CATextLayer()
+    private let statusLayer = CATextLayer()
+    private var destinationLayers: [CATextLayer] = []
+    private var groupLabels: [UUID: CATextLayer] = [:]
+    private var destinationLineID: UUID?
+    private var groupTargetID: UUID?
+    private var dropActive = false
 
     // State
     private(set) var theme: Theme = .summerAfternoon
@@ -76,6 +84,8 @@ final class LineView: NSView {
     private var draggingIDs: [UUID] = []
     private var internalDropHappened = false
 
+    var hasActiveDrag: Bool { dropActive || !draggingIDs.isEmpty }
+
     static let skyInsetBottom: CGFloat = 8
     static let itemWidth: Double = 100
 
@@ -104,13 +114,18 @@ final class LineView: NSView {
         addSubview(controls)
         NotificationCenter.default.addObserver(self,selector: #selector(menuBegan),name: NSMenu.didBeginTrackingNotification,object: nil)
         NotificationCenter.default.addObserver(self,selector: #selector(menuEnded),name: NSMenu.didEndTrackingNotification,object: nil)
+        model.$groups.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged(filtering:true) }.store(in: &cancellables)
+        model.$searchFilters.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$query.receive(on: RunLoop.main).sink { [weak self] _ in self?.scrollOffset = 0; self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$recognizedText.receive(on: RunLoop.main).sink { [weak self] _ in self?.boardChanged(filtering: true) }.store(in: &cancellables)
         model.$selectedIDs.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelectionAppearance() }.store(in: &cancellables)
         model.$settings.removeDuplicates { a,b in
-            a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.ambientEffects == b.ambientEffects && a.gentleBreeze == b.gentleBreeze
-        }.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme() }.store(in: &cancellables)
+            a.cardScale == b.cardScale && a.theme == b.theme && a.appearanceStyle == b.appearanceStyle && a.ambientEffects == b.ambientEffects && a.gentleBreeze == b.gentleBreeze
+        }.receive(on: RunLoop.main).sink { [weak self] _ in self?.applyTheme(); self?.relayout(animated: false) }.store(in: &cancellables)
         model.$settings.map(\.keepToolbarVisible).removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshToolbarVisibility() }.store(in: &cancellables)
+        model.$collapsedGroupIDs.receive(on:RunLoop.main).sink { [weak self] _ in self?.boardChanged(filtering:true) }.store(in:&cancellables)
+        layer?.addSublayer(statusLayer)
+        model.$statusMessage.receive(on:RunLoop.main).sink { [weak self] _ in self?.updateStatus() }.store(in:&cancellables)
         registerForDraggedTypes(PasteboardImporter.acceptedTypes)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Clothesline")
@@ -148,6 +163,17 @@ final class LineView: NSView {
         root.addSublayer(itemsLayer)
         root.addSublayer(captionLayer)
         root.addSublayer(lineNameLayer)
+        root.addSublayer(insertionMarker)
+        root.addSublayer(dragFeedback)
+        insertionMarker.strokeColor = NSColor.controlAccentColor.cgColor
+        insertionMarker.lineWidth = 3
+        insertionMarker.lineCap = .round
+        insertionMarker.zPosition = 1100
+        dragFeedback.fontSize = 12
+        dragFeedback.alignmentMode = .center
+        dragFeedback.cornerRadius = 8
+        dragFeedback.zPosition = 1100
+        dragFeedback.isHidden = true
         let none: [String: CAAction] = ["position": NSNull(), "bounds": NSNull(), "path": NSNull(), "contents": NSNull(), "frame": NSNull(), "opacity": NSNull(), "hidden": NSNull(), "string": NSNull(), "strokeEnd": NSNull()]
         for l in [lineLayer, ropeBase, ropeTwist, itemsLayer, captionLayer, lineNameLayer] as [CALayer] { l.actions = none }
         ropeBase.fillColor = nil
@@ -193,7 +219,8 @@ final class LineView: NSView {
         let compact = model.settings.appearanceStyle == .compact
         let transparent = theme.id == .liquidGlass || theme.id == .noTheme
         sky.isHidden = compact || transparent
-        layer?.backgroundColor = compact && !transparent ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil
+        let reducedTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        layer?.backgroundColor = theme.id == .liquidGlass && reducedTransparency ? NSColor.windowBackgroundColor.cgColor : (compact && !transparent ? NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor : nil)
         let skyRect = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.skyInsetBottom)
         sky.configure(theme: theme, skyRect: skyRect, scale: scale)
         ropeBase.strokeColor = theme.rope.cgColor
@@ -376,7 +403,7 @@ final class LineView: NSView {
         let board = model.board
         let lineChanged = renderedLineID != board.activeLineID
         renderedLineID = board.activeLineID
-        let newIDs = model.visibleItems.map(\.id)
+        let newIDs = model.ropeItems.map(\.id)
         let oldSet = Set(orderedIDs), newSet = Set(newIDs)
         let removed = orderedIDs.filter { !newSet.contains($0) }
         let added = newIDs.filter { !oldSet.contains($0) }
@@ -515,7 +542,7 @@ final class LineView: NSView {
         let items = orderedIDs.compactMap { model.board.item($0) }
         var jitters = items.map { $0.jitter(1) }
         if let dropIndex { jitters.insert(0, at: min(dropIndex, jitters.count)) }
-        layout = LineLayout(geometry: geometry, itemWidth: model.settings.appearanceStyle == .compact ? 138 : Self.itemWidth, jitters: jitters, scroll: scrollOffset, reduceMotion: Motion.reduced)
+        layout = LineLayout(geometry: geometry, itemWidth: (model.settings.appearanceStyle == .compact ? 138 : Self.itemWidth) * AdaptivePanel.cardScale(model.settings.cardScale), jitters: jitters, scroll: scrollOffset, reduceMotion: Motion.reduced)
         scrollOffset = min(scrollOffset, layout.overflow)
 
         for (i, item) in items.enumerated() {
@@ -524,7 +551,7 @@ final class LineView: NSView {
             guard slotIndex < layout.slots.count else { continue }
             let slot = layout.slots[slotIndex]
             let newPos = CGPoint(x: slot.x, y: slot.y)
-            let newTransform = CATransform3DMakeRotation(model.settings.appearanceStyle == .compact ? 0 : CGFloat(slot.rotation), 0, 0, 1)
+            let rotation = CATransform3DMakeRotation(model.settings.appearanceStyle == .compact ? 0 : CGFloat(slot.rotation), 0, 0, 1)
             l.zPosition = CGFloat(i)
             let isFresh = freshLayers.remove(item.id) != nil
             if animated && !isFresh && l.animation(forKey: "clipOn") == nil {
@@ -542,12 +569,16 @@ final class LineView: NSView {
                 }
             }
             l.position = newPos
-            l.transform = newTransform
+            let cardScale = CGFloat(AdaptivePanel.cardScale(model.settings.cardScale))
+            l.transform = CATransform3DScale(rotation, cardScale, cardScale, 1)
             l.opacity = slot.visible ? (draggingIDs.contains(item.id) ? 0.35 : 1) : 0
         }
         controls?.frame = CGRect(x: 10, y: bounds.height - 46, width: max(0,bounds.width-20), height: 40)
         positionLineName()
         positionHint()
+        layoutDropFeedback()
+        layoutGroupLabels()
+        updateStatus()
         updateAccessibilityChildren()
     }
 
@@ -879,6 +910,7 @@ final class LineView: NSView {
             }
         }
         if item.pinned { parts.append("Pinned") }
+        if let group = model.groupName(for: item) { parts.append("Group: \(group)") }
         let text = parts.joined(separator: " · ")
         let width = min(320, max(80, CGFloat(text.count) * 5.8 + 20))
         let y = min(bounds.height - Self.skyInsetBottom - 22, r.maxY + 4)
@@ -900,6 +932,7 @@ final class LineView: NSView {
         }
 
         let hit = itemID(at: p)
+        if event.clickCount == 2,let hit,let item = model.board.item(hit),model.expandGroup(for:item) { return }
         mouseDownPoint = p
         mouseDownItem = hit
         mouseDownWasSelected = hit.map { selection.contains($0) } ?? false
@@ -1098,15 +1131,26 @@ final class LineView: NSView {
     // MARK: - Dragging out
 
     private func beginDrag(event: NSEvent) {
-        let items = selectedItems
+        let items = model.dragItems(for:Set(selectedItems.map(\.id)))
         var dragItems: [NSDraggingItem] = []
         var ids: [UUID] = []
         for (n, item) in items.enumerated() {
-            guard let writer = DragWriters.writer(for: item, model: model), let l = itemLayers[item.id], let r = rect(for: item.id) else { continue }
+            guard let writer = DragWriters.writer(for: item, model: model), let l = itemLayers[model.dragRepresentativeID(for:item)], let r = rect(for: model.dragRepresentativeID(for:item)) else { continue }
             let dragItem = NSDraggingItem(pasteboardWriter: writer)
-            let image = l.snapshot(scale: scale)
+            let snapshot = l.snapshot(scale: scale)
+            let image: NSImage
+            if n == 0 && items.count > 1 {
+                image = NSImage(size: snapshot.size)
+                image.lockFocus()
+                snapshot.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+                let badge = NSRect(x: max(0,image.size.width - 34),y: max(0,image.size.height - 24),width: 32,height: 22)
+                NSColor.controlAccentColor.setFill()
+                NSBezierPath(roundedRect: badge,xRadius: 11,yRadius: 11).fill()
+                ("\(items.count)" as NSString).draw(in: badge.insetBy(dx: 6,dy: 3), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 12),.foregroundColor: NSColor.white])
+                image.unlockFocus()
+            } else { image = snapshot }
             // Stack multiple items slightly so the drag reads as a bundle.
-            let frame = NSRect(origin: CGPoint(x: r.midX - l.bounds.width / 2 + CGFloat(n) * 3, y: r.midY - l.bounds.height / 2 + CGFloat(n) * 3), size: l.bounds.size)
+            let frame = NSRect(origin: CGPoint(x: r.minX + CGFloat(n) * 3, y: r.minY + CGFloat(n) * 3), size: r.size)
             dragItem.setDraggingFrame(frame, contents: image)
             dragItems.append(dragItem)
             ids.append(item.id)
@@ -1117,6 +1161,7 @@ final class LineView: NSView {
         }
         draggingIDs = ids
         internalDropHappened = false
+        setDropActive(true)
         let session = beginDraggingSession(with: dragItems, event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
         session.draggingFormation = .pile
@@ -1144,18 +1189,19 @@ final class LineView: NSView {
         if !isInternal(sender) {
             guard PasteboardImporter.canImport(sender.draggingPasteboard) else { return [] }
         }
-        updateDropIndex(insertionIndex(for: sender))
+        updateDropDestination(sender)
         return isInternal(sender) ? .move : .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         if model.isSearching && isInternal(sender) { return [] }
         if !isInternal(sender) && !PasteboardImporter.canImport(sender.draggingPasteboard) { return [] }
-        updateDropIndex(insertionIndex(for: sender))
+        updateDropDestination(sender)
         return isInternal(sender) ? .move : .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
+        setDropActive(false)
         updateDropIndex(nil)
         delegate?.lineViewDragDidExit(self)
     }
@@ -1164,24 +1210,139 @@ final class LineView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let index = dropIndex ?? orderedIDs.count
+        let lineDestination = destinationLineID
+        let groupTarget = groupTargetID
+        setDropActive(false)
         updateDropIndex(nil, animated: false)
         if isInternal(sender) {
             guard !model.isSearching else { return false }
             internalDropHappened = true
             (sender.draggingSource as? CollectionDragView)?.didDropInternally = true
             let moving = Set(internalIDs(sender) ?? [])
-            let before = orderedIDs.prefix(index).filter { !moving.contains($0) }.count
-            model.move(moving, toPosition: before)
+            let before = model.linePosition(forVisibleInsertion:index,movingIDs:moving)
+            if let lineDestination {
+                model.move(moving, toLine: lineDestination)
+                model.notice("Moved \(moving.count) items to line")
+            } else if let groupTarget, let item = model.board.item(groupTarget) {
+                let existing = model.groups.first { $0.itemIDs.contains(groupTarget) && $0.lineID == item.lineID }?.itemIDs ?? [groupTarget]
+                model.groupItems(moving.union(existing), named: model.groupName(for: item) ?? item.title)
+            } else {
+                model.move(moving, toPosition: before)
+                model.notice("Reordered \(moving.count) items")
+            }
             return true
         }
-        let ids = PasteboardImporter.importContents(of: sender.draggingPasteboard, into: model, source: .drop, at: model.isSearching ? nil : index)
+        let ids = PasteboardImporter.importContents(of: sender.draggingPasteboard, into: model, source: .drop, lineID: lineDestination, at: model.isSearching || lineDestination != nil ? nil : model.linePosition(forVisibleInsertion:index))
         delegate?.lineViewDidAcceptDrop(self)
         if !ids.isEmpty { model.query = ""; selection = Set(ids) }
         return true
     }
 
     override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        setDropActive(false)
         updateDropIndex(nil)
+    }
+
+    private func updateStatus() {
+        statusLayer.isHidden = model.statusMessage == nil
+        statusLayer.string = model.statusMessage
+        statusLayer.fontSize = 12
+        statusLayer.alignmentMode = .center
+        statusLayer.truncationMode = .end
+        statusLayer.foregroundColor = NSColor.labelColor.cgColor
+        statusLayer.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+        statusLayer.cornerRadius = 6
+        statusLayer.contentsScale = scale
+        statusLayer.frame = CGRect(x:12,y:bounds.height-72,width:max(0,bounds.width-24),height:21)
+        statusLayer.actions = ["string":NSNull(),"isHidden":NSNull(),"frame":NSNull()]
+    }
+
+    private func layoutGroupLabels() {
+        groupLabels.values.forEach { $0.removeFromSuperlayer() }
+        groupLabels = [:]
+        for id in orderedIDs {
+            guard let item = model.board.item(id), let name = model.groupDisplayName(for: item),
+                  let frame = rect(for: id), let card = itemLayers[id], card.opacity > 0.5 else { continue }
+            let label = CATextLayer()
+            label.string = name
+            label.fontSize = 10
+            label.alignmentMode = .center
+            label.truncationMode = .end
+            label.contentsScale = scale
+            label.foregroundColor = NSColor.white.cgColor
+            label.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.92).cgColor
+            label.cornerRadius = 4
+            label.frame = CGRect(x: frame.minX + 4,y: frame.maxY - 19,width: max(20,frame.width - 8),height: 16)
+            label.zPosition = 950
+            layer?.addSublayer(label)
+            groupLabels[id] = label
+        }
+    }
+
+    /// Keep NoTheme's optional pass-through outside every visible interaction surface.
+    func containsInteractiveSurface(_ point: CGPoint) -> Bool {
+        if itemID(at: point) != nil || lineNameRect.contains(point) { return true }
+        if toolbarVisible, let controls, controls.frame.insetBy(dx: -6,dy: -6).contains(point) { return true }
+        return abs(point.y - geometry.ropeY(atX: Double(point.x))) < 12
+    }
+
+    private func setDropActive(_ active: Bool) {
+        dropActive = active
+        if !active { destinationLineID = nil; groupTargetID = nil }
+        layoutDropFeedback()
+    }
+
+    private func updateDropDestination(_ sender: NSDraggingInfo) {
+        setDropActive(true)
+        let point = convert(sender.draggingLocation, from: nil)
+        destinationLineID = nil
+        groupTargetID = nil
+        do {
+            for (line, target) in zip(model.board.lines, destinationLayers) where target.frame.contains(point) {
+                destinationLineID = line.id
+            }
+            if isInternal(sender), destinationLineID == nil, NSEvent.modifierFlags.contains(.option),
+               let id = itemID(at: point), !(internalIDs(sender) ?? []).contains(id) { groupTargetID = id }
+        }
+        updateDropIndex(destinationLineID == nil && groupTargetID == nil ? insertionIndex(for: sender) : nil)
+        layoutDropFeedback()
+    }
+
+    private func layoutDropFeedback() {
+        destinationLayers.forEach { $0.removeFromSuperlayer() }
+        destinationLayers = []
+        dragFeedback.isHidden = !dropActive
+        insertionMarker.path = nil
+        guard dropActive else { return }
+        let count = max(1, model.board.lines.count)
+        let targetWidth = min(160, max(44, (bounds.width - 24) / CGFloat(count)))
+        for (index, line) in model.board.lines.enumerated() {
+            let target = CATextLayer()
+            target.string = line.name
+            target.fontSize = 11
+            target.alignmentMode = .center
+            target.truncationMode = .end
+            target.contentsScale = scale
+            target.foregroundColor = NSColor.labelColor.cgColor
+            target.backgroundColor = (destinationLineID == line.id ? NSColor.controlAccentColor : NSColor.windowBackgroundColor).withAlphaComponent(0.95).cgColor
+            target.cornerRadius = 6
+            target.frame = CGRect(x: 12 + CGFloat(index) * targetWidth,y: 4,width: targetWidth - 4,height: 22)
+            target.zPosition = 1100
+            layer?.addSublayer(target)
+            destinationLayers.append(target)
+        }
+        dragFeedback.string = destinationLineID != nil ? "Move to line" : groupTargetID != nil ? "Release to group" : "Drop to insert · Option-drop on a card to group"
+        dragFeedback.foregroundColor = NSColor.labelColor.cgColor
+        dragFeedback.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95).cgColor
+        dragFeedback.contentsScale = scale
+        dragFeedback.frame = CGRect(x: max(12,(bounds.width - 340) / 2),y: bounds.height - 74,width: min(340,bounds.width - 24),height: 22)
+        if let dropIndex, layout.slots.indices.contains(dropIndex) {
+            let slot = layout.slots[dropIndex]
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: slot.x,y: slot.y - 8))
+            path.addLine(to: CGPoint(x: slot.x,y: slot.y + 76))
+            insertionMarker.path = path
+        }
     }
 
     private func updateDropIndex(_ index: Int?, animated: Bool = true) {
@@ -1198,7 +1359,7 @@ final class LineView: NSView {
         accessibilityItems = orderedIDs.compactMap { id in
             guard let item = model.board.item(id), let r = rect(for: id) else { return nil }
             let e = ItemAccessibilityElement(itemID: id, view: self)
-            e.setAccessibilityLabel("\(item.kind.displayName): \(item.title)\(item.pinned ? ", pinned" : "")")
+            e.setAccessibilityLabel("\(item.kind.displayName): \(item.title)\(item.pinned ? ", pinned" : "")\(model.groupName(for: item).map { ", group: " + $0 } ?? "")")
             e.setAccessibilityFrameInParentSpace(r)
             e.setAccessibilitySelected(selection.contains(id))
             return e
@@ -1223,6 +1384,7 @@ extension LineView: NSDraggingSource {
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         let ids = draggingIDs
         draggingIDs = []
+        setDropActive(false)
         defer { relayout(animated: false) }
         guard !internalDropHappened else { return }
         if operation.contains(.move) {

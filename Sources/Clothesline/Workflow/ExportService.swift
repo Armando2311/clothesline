@@ -11,16 +11,84 @@ final class ExportCancellation: @unchecked Sendable {
 }
 
 enum ExportService {
-    static func plannedNames(inputs: [ExportInput], options: RecipeOptions) -> [String] {
+    struct PlannedOutput { var inputIndex: Int; var name: String; var format: ExportImageFormat? }
+    struct SizeEstimate { var outputs: [(name: String, bytes: Int)]; var totalBytes: Int { outputs.reduce(0) { $0 + $1.bytes } } }
+    private static func plan(inputs: [ExportInput], options: RecipeOptions) -> [PlannedOutput] {
         var used: Set<String> = ["report.md"], imageIndex = 0
-        return inputs.compactMap { input in
-            guard input.item.file != nil || input.url != nil else { return nil }
-            if options.recipe != .bugReport && [.image,.screenshot].contains(input.item.kind) {
+        var outputs: [PlannedOutput] = []
+        for (index, input) in inputs.enumerated() {
+            guard input.item.file != nil || input.url != nil else { continue }
+            if options.recipe != .bugReport && [.image, .screenshot].contains(input.item.kind) {
                 imageIndex += 1
-                return ExportNames.unique("\(ExportNames.safe(options.prefix))-\(String(format: "%03d", imageIndex)).jpg", used: &used)
+                for format in options.imageFormats {
+                    let name = ExportNames.unique("\(ExportNames.safe(options.prefix))-\(String(format: "%03d", imageIndex)).\(format.fileExtension)", used: &used)
+                    outputs.append(PlannedOutput(inputIndex: index, name: name, format: format))
+                }
+            } else {
+                outputs.append(PlannedOutput(inputIndex: index, name: ExportNames.unique(input.url?.lastPathComponent ?? input.item.file?.fileName ?? input.item.title, used: &used), format: nil))
             }
-            return ExportNames.unique(input.url?.lastPathComponent ?? input.item.file?.fileName ?? input.item.title, used: &used)
         }
+        return outputs
+    }
+    static func plannedNames(inputs: [ExportInput], options: RecipeOptions) -> [String] {
+        plan(inputs: inputs, options: options).map(\.name)
+    }
+    private static func imageData(url: URL, format: ExportImageFormat, options: RecipeOptions) throws -> Data {
+        let image = try ImageProcessor.load(url)
+        var edits = ImageEdits(); edits.maxEdge = options.maxEdge
+        edits.crop = ImageProcessor.centerCrop(image, ratio: options.cropRatio)
+        let rendered = try ImageProcessor.render(image, edits: edits)
+        return try ImageProcessor.encode(rendered, format: format == .png ? .png : .jpeg,
+                                         quality: options.quality, maxBytes: options.maximumImageBytes)
+    }
+    private static func report(inputs: [ExportInput], options: RecipeOptions, outputs: [PlannedOutput]) -> String {
+        var report = "# \(options.packageName)\n\n"
+        if options.recipe == .bugReport {
+            report += "## Reproduction steps\n\(options.steps)\n\n## Expected result\n\(options.expected)\n\n## Actual result\n\(options.actual)\n\n"
+        }
+        report += "## Materials\n\n"
+        for (index, input) in inputs.enumerated() {
+            if input.url != nil {
+                for output in outputs where output.inputIndex == index {
+                    let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "()[]#?"))
+                    let escaped = output.name.addingPercentEncoding(withAllowedCharacters: allowed) ?? output.name
+                    let label = output.name.replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
+                    report += "- [\(label)](\(escaped))\n"
+                }
+            } else if let text = input.item.text { report += "\n### \(input.item.title)\n\n\(text)\n\n" }
+            else if let link = input.item.link { report += "- \(input.item.title): \(link)\n" }
+        }
+        return report
+    }
+    /// Uses the export encoder, so per-image estimates are the exact encoded bytes.
+    /// The total is before ZIP compression; directory attachments include nested files.
+    static func estimate(inputs: [ExportInput], options: RecipeOptions,
+                         cancellation: ExportCancellation = ExportCancellation()) throws -> SizeEstimate {
+        try options.validate(); try cancellation.check()
+        let outputs = plan(inputs: inputs, options: options)
+        var sizes: [(name: String, bytes: Int)] = []
+        for output in outputs {
+            try cancellation.check()
+            guard let url = inputs[output.inputIndex].url else { throw WorkflowError.unreadable(inputs[output.inputIndex].item.title) }
+            let bytes: Int
+            if let format = output.format { bytes = try imageData(url: url, format: format, options: options).count }
+            else {
+                let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                if values.isDirectory == true {
+                    let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+                    var count = 0
+                    while let child = enumerator?.nextObject() as? URL {
+                        try cancellation.check()
+                        let childValues = try child.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                        if childValues.isRegularFile == true { count += childValues.fileSize ?? 0 }
+                    }
+                    bytes = count
+                } else { bytes = values.fileSize ?? 0 }
+            }
+            sizes.append((output.name, bytes))
+        }
+        sizes.append(("Report.md", report(inputs: inputs, options: options, outputs: outputs).utf8.count))
+        return SizeEstimate(outputs: sizes)
     }
     static func export(inputs: [ExportInput], options: RecipeOptions, destination: URL,
                        cancellation: ExportCancellation = ExportCancellation(), progress: (Double) -> Void = { _ in }) throws -> ExportResult {
@@ -49,33 +117,19 @@ enum ExportService {
         let name = ExportNames.safe(options.packageName)
         let folder = stage.appendingPathComponent(name, isDirectory: true)
         try fm.createDirectory(at: folder, withIntermediateDirectories: false)
-        let names = plannedNames(inputs: inputs, options: options)
-        var index = 0
-        var report = "# \(options.packageName)\n\n"
-        if options.recipe == .bugReport {
-            report += "## Reproduction steps\n\(options.steps)\n\n## Expected result\n\(options.expected)\n\n## Actual result\n\(options.actual)\n\n"
-        }
-        report += "## Materials\n\n"
-        for (position,input) in inputs.enumerated() {
+        let outputs = plan(inputs: inputs, options: options)
+        let report = report(inputs: inputs, options: options, outputs: outputs)
+        for (position, input) in inputs.enumerated() {
             try cancellation.check()
-            if let url = input.url {
-                let fileName = names[index]; index += 1
-                let output = folder.appendingPathComponent(fileName)
-                if options.recipe != .bugReport && [.image,.screenshot].contains(input.item.kind) {
-                    let image = try ImageProcessor.load(url)
-                    var edits = ImageEdits(); edits.maxEdge = options.maxEdge; edits.crop = ImageProcessor.centerCrop(image, ratio: options.cropRatio)
-                    let rendered = try ImageProcessor.render(image, edits: edits)
-                    try ImageProcessor.encode(rendered, format: .jpeg, quality: options.quality).write(to: output, options: .withoutOverwriting)
-                } else {
-                    try fm.copyItem(at: url, to: output)
-                }
-                let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "()[]#?"))
-                let escaped = fileName.addingPercentEncoding(withAllowedCharacters: allowed) ?? fileName
-                let label = fileName.replacingOccurrences(of: "[",with: "\\[").replacingOccurrences(of: "]",with: "\\]")
-                report += "- [\(label)](\(escaped))\n"
-            } else if let text = input.item.text { report += "\n### \(input.item.title)\n\n\(text)\n\n" }
-            else if let link = input.item.link { report += "- \(input.item.title): \(link)\n" }
-            progress(Double(position+1)/Double(inputs.count+1))
+            for output in outputs where output.inputIndex == position {
+                try cancellation.check()
+                guard let url = input.url else { throw WorkflowError.unreadable(input.item.title) }
+                let destinationURL = folder.appendingPathComponent(output.name)
+                if let format = output.format {
+                    try imageData(url: url, format: format, options: options).write(to: destinationURL, options: .withoutOverwriting)
+                } else { try fm.copyItem(at: url, to: destinationURL) }
+            }
+            progress(Double(position + 1) / Double(inputs.count + 1))
         }
         try Data(report.utf8).write(to: folder.appendingPathComponent("Report.md"), options: .withoutOverwriting)
         try cancellation.check()

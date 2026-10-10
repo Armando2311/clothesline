@@ -15,8 +15,11 @@ struct CollectionView: View {
                         ForEach(model.visibleItems) { item in
                             VStack(spacing: 8) {
                                 CollectionThumbnail(model: model,item: item).frame(height: 105)
-                                Text(item.title).font(.body.weight(.medium)).lineLimit(2).frame(height: 35)
+                                SearchHighlight(text:item.title,query:model.query).font(.body.weight(.medium)).lineLimit(2).frame(height: 35)
                                 Text(model.board.line(item.lineID)?.name ?? item.kind.displayName).font(.caption).foregroundStyle(.secondary)
+                                if let excerpt = SearchFilters.excerpt(model.recognizedText[item.id] ?? item.text ?? "",query:model.query) {
+                                    SearchHighlight(text:excerpt,query:model.query).font(.caption).lineLimit(2)
+                                }
                             }
                             .padding(10).frame(maxWidth: .infinity)
                             .background(model.selectedIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.04))

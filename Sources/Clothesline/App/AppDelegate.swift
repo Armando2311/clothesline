@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model: AppModel
     private(set) lazy var panel = PanelController(model: model)
     private let watcher = ScreenshotWatcher()
+    private lazy var folderRules = FolderRuleWatcher(model:model)
     private var statusItem: NSStatusItem?
     private var customFolderAccess: URL?
 
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ws.addObserver(self, selector: #selector(volumesChanged), name: NSWorkspace.didUnmountNotification, object: nil)
 
         model.revalidate()
+        folderRules.start()
 
         // Record first launch only after the guide completes.
         let firstLaunchKey = "didShowWelcome"
@@ -65,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        folderRules.stop()
         model.prepareForTermination()
         customFolderAccess?.stopAccessingSecurityScopedResource()
     }
@@ -83,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if s.collectScreenshots != old.collectScreenshots || s.includeScreenRecordings != old.includeScreenRecordings
             || s.customScreenshotFolder != old.customScreenshotFolder { applyWatcherConfig() }
         if s.showMenuBarIcon != old.showMenuBarIcon { updateStatusItem() }
-        if s.appearanceStyle != old.appearanceStyle { panel.refreshLayout() }
+        if s.appearanceStyle != old.appearanceStyle || s.cardScale != old.cardScale || s.panelLayout != old.panelLayout || s.noThemeClickThrough != old.noThemeClickThrough { panel.refreshLayout() }
         if s.theme != old.theme { panel.refreshLayout() }
         if s.gentleBreeze != old.gentleBreeze || s.ambientEffects != old.ambientEffects {
             panel.lineView.applyTheme()
@@ -171,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let clip = NSMenuItem(title: "Hang Clipboard", action: #selector(menuHangClipboard), keyEquivalent: "")
         if let s = model.settings.hangClipboardShortcut { clip.title += "    \(s.displayString)" }
         menu.addItem(clip)
+        menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(menuCheckUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "New Note…", action: #selector(menuNewNote), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Add Files…", action: #selector(menuAddFiles), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -213,4 +217,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuBrowse() { panel.lineView.workflow.browse() }
     @objc private func menuWelcome() { WelcomeWindow.shared.show() }
     @objc private func menuSettings() { SettingsWindowController.shared.show(model: model) }
+    @objc private func menuCheckUpdates() { UpdateChecker.shared.check() }
+
 }
