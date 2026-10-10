@@ -1,0 +1,46 @@
+name: Signed distribution build
+on:
+  workflow_dispatch:
+jobs:
+  signed-build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Import Developer ID and notary credentials
+        env:
+          CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CERTIFICATE_P12"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/developer.p12"
+          security create-keychain -p runner "$RUNNER_TEMP/release.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/release.keychain-db"
+          security unlock-keychain -p runner "$RUNNER_TEMP/release.keychain-db"
+          security import "$RUNNER_TEMP/developer.p12" -k "$RUNNER_TEMP/release.keychain-db" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k runner "$RUNNER_TEMP/release.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/release.keychain-db"
+          xcrun notarytool store-credentials clothesline-release --apple-id "$APPLE_ID" --password "$APP_PASSWORD" --team-id "$TEAM_ID" --keychain "$RUNNER_TEMP/release.keychain-db"
+      - name: Sign and notarize
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+          NOTARY_PROFILE: clothesline-release
+        run: Scripts/release-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clothesline-notarized
+          path: |
+            build/Clothesline.zip
+            build/Clothesline.zip.sha256
+      - name: Remove temporary credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer.p12"
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true

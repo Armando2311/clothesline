@@ -92,6 +92,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     /// Legacy preference retained for decoding; outside clicks never dismiss the line.
     public var hideWhenClickingOutside: Bool = false
     public var revealOnDragToTopEdge: Bool = true
+    public var revealOnShake: Bool = false
 
     // Screenshots
     public var collectScreenshots: Bool = true
@@ -109,6 +110,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     // Appearance & motion
     public var appearanceStyle: AppearanceStyle = .illustrated
     public var theme: ThemeChoice = .automatic
+    public var panelLayout: PanelLayout = .fitted
+    public var cardScale: Double = 1
+    public var noThemeClickThrough: Bool = false
     public var keepToolbarVisible: Bool = false
     public var ambientEffects: Bool = true
     public var gentleBreeze: Bool = true
@@ -120,9 +124,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case toggleShortcut, hangClipboardShortcut, showMenuBarIcon, hideWhenClickingOutside, revealOnDragToTopEdge
+        case toggleShortcut, hangClipboardShortcut, showMenuBarIcon, hideWhenClickingOutside, revealOnDragToTopEdge, revealOnShake
         case collectScreenshots, revealOnScreenshot, includeScreenRecordings, customScreenshotFolder, customScreenshotFolderBookmark, screenshotLineID
-        case afterDragOut, appearanceStyle, theme, keepToolbarVisible, ambientEffects, gentleBreeze, playSounds, retention
+        case afterDragOut, appearanceStyle, theme, panelLayout, cardScale, noThemeClickThrough, keepToolbarVisible, ambientEffects, gentleBreeze, playSounds, retention
     }
 
     public init(from decoder: Decoder) throws {
@@ -134,6 +138,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showMenuBarIcon = (try? c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon)) ?? d.showMenuBarIcon
         hideWhenClickingOutside = (try? c.decodeIfPresent(Bool.self, forKey: .hideWhenClickingOutside)) ?? d.hideWhenClickingOutside
         revealOnDragToTopEdge = (try? c.decodeIfPresent(Bool.self, forKey: .revealOnDragToTopEdge)) ?? d.revealOnDragToTopEdge
+        revealOnShake = (try? c.decodeIfPresent(Bool.self,forKey:.revealOnShake)) ?? d.revealOnShake
         collectScreenshots = (try? c.decodeIfPresent(Bool.self, forKey: .collectScreenshots)) ?? d.collectScreenshots
         revealOnScreenshot = (try? c.decodeIfPresent(Bool.self, forKey: .revealOnScreenshot)) ?? d.revealOnScreenshot
         includeScreenRecordings = (try? c.decodeIfPresent(Bool.self, forKey: .includeScreenRecordings)) ?? d.includeScreenRecordings
@@ -143,6 +148,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         afterDragOut = (try? c.decodeIfPresent(AfterDragOut.self, forKey: .afterDragOut)) ?? d.afterDragOut
         appearanceStyle = (try? c.decodeIfPresent(AppearanceStyle.self, forKey: .appearanceStyle)) ?? d.appearanceStyle
         theme = (try? c.decodeIfPresent(ThemeChoice.self, forKey: .theme)) ?? d.theme
+        panelLayout = (try? c.decodeIfPresent(PanelLayout.self, forKey: .panelLayout)) ?? d.panelLayout
+        let scale = (try? c.decodeIfPresent(Double.self, forKey: .cardScale)) ?? d.cardScale
+        cardScale = scale.isFinite ? min(1.2,max(0.8,scale)) : d.cardScale
+        noThemeClickThrough = (try? c.decodeIfPresent(Bool.self, forKey: .noThemeClickThrough)) ?? d.noThemeClickThrough
         keepToolbarVisible = (try? c.decodeIfPresent(Bool.self, forKey: .keepToolbarVisible)) ?? d.keepToolbarVisible
         ambientEffects = (try? c.decodeIfPresent(Bool.self, forKey: .ambientEffects)) ?? d.ambientEffects
         gentleBreeze = (try? c.decodeIfPresent(Bool.self, forKey: .gentleBreeze)) ?? d.gentleBreeze
@@ -158,6 +167,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try c.encode(showMenuBarIcon, forKey: .showMenuBarIcon)
         try c.encode(hideWhenClickingOutside, forKey: .hideWhenClickingOutside)
         try c.encode(revealOnDragToTopEdge, forKey: .revealOnDragToTopEdge)
+        try c.encode(revealOnShake,forKey:.revealOnShake)
         try c.encode(collectScreenshots, forKey: .collectScreenshots)
         try c.encode(revealOnScreenshot, forKey: .revealOnScreenshot)
         try c.encode(includeScreenRecordings, forKey: .includeScreenRecordings)
@@ -167,6 +177,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         try c.encode(afterDragOut, forKey: .afterDragOut)
         try c.encode(appearanceStyle, forKey: .appearanceStyle)
         try c.encode(theme, forKey: .theme)
+        try c.encode(panelLayout, forKey: .panelLayout)
+        try c.encode(cardScale, forKey: .cardScale)
+        try c.encode(noThemeClickThrough, forKey: .noThemeClickThrough)
         try c.encode(keepToolbarVisible, forKey: .keepToolbarVisible)
         try c.encode(ambientEffects, forKey: .ambientEffects)
         try c.encode(gentleBreeze, forKey: .gentleBreeze)

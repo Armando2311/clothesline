@@ -33,10 +33,10 @@ enum PasteboardImporter {
     /// Imports everything usable from `pb`. Returns the ids added synchronously;
     /// file promises arrive asynchronously and are hung when received.
     @discardableResult
-    static func importContents(of pb: NSPasteboard, into model: AppModel, source: ItemSource, at position: Int? = nil) -> [UUID] {
+    static func importContents(of pb: NSPasteboard, into model: AppModel, source: ItemSource, lineID:UUID? = nil, at position: Int? = nil) -> [UUID] {
         // 1. Real files.
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            return model.hang(fileURLs: urls, source: source, at: position)
+            return model.hang(fileURLs: urls, source: source, lineID:lineID, at: position)
         }
 
         // 2. File promises — except web-location promises, where the URL itself is better.
@@ -46,13 +46,13 @@ enum PasteboardImporter {
                 !r.fileTypes.contains { t in UTType(t).map { webloc.map($0.conforms(to:)) ?? false } ?? false }
             }
             if !useful.isEmpty {
-                receive(useful, into: model, source: source, at: position)
+                receive(useful, into: model, source: source, lineID:lineID, at: position)
                 return []
             }
         }
 
         // 3. Image data.
-        if let id = importImageData(pb, into: model, source: source, at: position) {
+        if let id = importImageData(pb, into: model, source: source, lineID:lineID, at: position) {
             return [id]
         }
 
@@ -64,7 +64,7 @@ enum PasteboardImporter {
                 var pos = position
                 let title = links.count == 1 ? pb.string(forType: NSPasteboard.PasteboardType("public.url-name")) : nil
                 for link in links {
-                    if let id = model.hang(link: link.absoluteString, title: title.flatMap { $0.isEmpty ? nil : $0 }, source: source, at: pos) {
+                    if let id = model.hang(link: link.absoluteString, title: title.flatMap { $0.isEmpty ? nil : $0 }, source: source, lineID:lineID, at: pos) {
                         ids.append(id)
                         pos = pos.map { $0 + 1 }
                     }
@@ -74,13 +74,13 @@ enum PasteboardImporter {
         }
 
         // 5. Text.
-        if let text = pb.string(forType: .string), let id = model.hang(text: text, source: source, at: position) {
+        if let text = pb.string(forType: .string), let id = model.hang(text: text, source: source, lineID:lineID, at: position) {
             return [id]
         }
         return []
     }
 
-    private static func importImageData(_ pb: NSPasteboard, into model: AppModel, source: ItemSource, at position: Int?) -> UUID? {
+    private static func importImageData(_ pb: NSPasteboard, into model: AppModel, source: ItemSource, lineID:UUID?, at position: Int?) -> UUID? {
         let candidates: [(NSPasteboard.PasteboardType, String)] = [
             (.png, "png"),
             (NSPasteboard.PasteboardType(UTType.jpeg.identifier), "jpg"),
@@ -88,18 +88,19 @@ enum PasteboardImporter {
         ]
         for (type, ext) in candidates {
             if let data = pb.data(forType: type), !data.isEmpty {
-                return model.hang(imageData: data, fileExtension: ext, suggestedName: nil, source: source, at: position)
+                return model.hang(imageData: data, fileExtension: ext, suggestedName: nil, source: source, lineID:lineID, at: position)
             }
         }
         // TIFF is what most apps put on the clipboard; store it as PNG.
         if let tiff = pb.data(forType: .tiff), let rep = NSBitmapImageRep(data: tiff),
            let png = rep.representation(using: .png, properties: [:]) {
-            return model.hang(imageData: png, fileExtension: "png", suggestedName: nil, source: source, at: position)
+            return model.hang(imageData: png, fileExtension: "png", suggestedName: nil, source: source, lineID:lineID, at: position)
         }
         return nil
     }
 
-    private static func receive(_ receivers: [NSFilePromiseReceiver], into model: AppModel, source: ItemSource, at position: Int?) {
+    private static func receive(_ receivers: [NSFilePromiseReceiver], into model: AppModel, source: ItemSource, lineID:UUID?, at position: Int?) {
+        let originalLine = model.board.activeLineID
         for receiver in receivers {
             let destination: URL
             do {
@@ -112,10 +113,13 @@ enum PasteboardImporter {
             receiver.receivePromisedFiles(atDestination: destination, options: [:], operationQueue: promiseQueue) { url, error in
                 Task { @MainActor in
                     if let error {
+                        model.notice("Promised file could not be received: \(error.localizedDescription)")
                         Log.error("Promised file failed: \(error.localizedDescription)")
                         return
                     }
-                    model.hang(fileURLs: [url], source: source, at: position, ownership: .owned)
+                    let kind = ItemClassifier.kind(forFileName:url.lastPathComponent,isDirectory:false,isPackage:false)
+                    let destinationLine = lineID ?? model.activity.destination(for:url,source:source,kind:kind,defaultLineID:originalLine,validLineIDs:Set(model.board.lines.map(\.id)))
+                    model.hang(fileURLs: [url], source: source, lineID:destinationLine, at: position, ownership: .owned)
                 }
             }
         }

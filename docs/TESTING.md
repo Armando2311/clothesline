@@ -4,6 +4,14 @@ This file separates what has been **verified automatically**, what was **inspect
 visually** from rendered output, and what **still needs a person at a Mac**. The app was
 originally developed in a Linux container; the current workflow upgrade also has local macOS verification.
 
+## Premium branch verification — 2026-10-10
+
+On `codex/clothesline-premium-experience`, the final local suite passed **129 tests with zero failures**, the native app self-test passed **28 checks**, and the Xcode Debug build succeeded. Core coverage includes older settings/presets decoding, exact export limits and cancellation, search filters, geometry, shake detection, workspace/rule persistence, stable folder writes and bounded activity. Native regressions cover fitted/full-width geometry, click-through hit areas, grouped insertion, explicit drop destinations, retained owned copies after relaunch, OCR copying without a prior search and persistent save-error feedback.
+
+The rendered theme/Compact/toolbar preview was visually inspected. A separate QA bundle and state directory were used to open a fitted line, browse contextual controls, save a workspace context and named export preset, choose a remembered destination, and complete a real export. Its preview reported 86 report bytes before ZIP compression; the produced archive contained the matching 86-byte report. Independent review identified grouped insertion, destination import and save-error visibility issues; each was fixed and regression tested.
+
+`bash -n Scripts/release-app.sh` passes, and the release script rejects missing distribution credentials before building. Developer ID signing, notarization and the signed GitHub workflow have **not** been run: no Developer ID Application identity was available. Update checks use an explicit GitHub release/download flow; automatic installation is not implemented. Real multi-monitor arrangements, cross-app promised-file drags, VoiceOver and long-duration performance still need hardware verification. Existing historical evidence below is not a measurement of this branch's memory or idle CPU.
+
 ## Current local verification — 2026-10-08
 
 The workflow upgrade and redesign were built on a real Mac using Xcode 26.3 and macOS 26.5. Historical CI measurements below describe the original baseline, not the current build's memory or performance.
@@ -114,7 +122,7 @@ Run on real hardware. Record macOS version and Mac model for each run.
 - [ ] Menu bar set to auto-hide; full-screen app (Safari full screen, Keynote) → line appears above it.
 - [ ] Mission Control and ⌘` don't show the panel.
 - [ ] Opening with ⌃⌥C keeps the previous app frontmost (its menu bar stays).
-- [ ] Click into another app → line hides. Esc hides.
+- [ ] Click into another app → line stays open. Escape, EXIT or the toggle hides it.
 - [ ] Space opens Quick Look above the line; ← → move through items.
 - [ ] Light/Dark switch with theme Automatic → Summer ↔ Midnight.
 - [ ] Reduce Motion on → no drops/swings/particles, simple fades.

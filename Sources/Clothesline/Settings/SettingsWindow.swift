@@ -76,6 +76,7 @@ private struct GeneralSettings: View {
             Section("Behaviour") {
                 Text("The line stays open until you use its shortcut, Escape or EXIT button.").font(.caption)
                 Toggle("Reveal the line when dragging something to the top of the screen", isOn: $model.settings.revealOnDragToTopEdge)
+                Toggle("Reveal the line when shaking a dragged item", isOn: $model.settings.revealOnShake)
                 Picker("After dragging an item out", selection: $model.settings.afterDragOut) {
                     ForEach(AfterDragOut.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
@@ -212,6 +213,16 @@ private struct AppearanceSettings: View {
                     ForEach(AppearanceStyle.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
                 Text("Compact keeps the rope and uses upright cards with less decoration.").font(.caption).foregroundStyle(.secondary)
+                Picker("Panel width", selection: $model.settings.panelLayout) {
+                    Text("Fit content, centered").tag(PanelLayout.fitted)
+                    Text("Full screen width").tag(PanelLayout.fullWidth)
+                }
+                HStack {
+                    Text("Card size")
+                    Slider(value: $model.settings.cardScale, in: 0.8...1.2, step: 0.05)
+                    Text("\(Int(model.settings.cardScale * 100))%").monospacedDigit().frame(width: 44)
+                }
+
             }
             Section("Themes") {
                 Picker("Theme", selection: $model.settings.theme) {
@@ -225,6 +236,10 @@ private struct AppearanceSettings: View {
                 }
                 .pickerStyle(.radioGroup)
                 Text("Liquid Glass uses native glass on macOS 26, with frosted translucency on earlier versions.").font(.caption).foregroundStyle(.secondary)
+                if model.settings.theme == .noTheme {
+                    Toggle("Let clicks through empty space reach apps underneath", isOn: $model.settings.noThemeClickThrough)
+                    Text("Cards, rope and controls remain interactive. Dragging keeps the entire panel available as a drop target.").font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section {
                 Toggle("Gentle breeze (items sway slightly while the line is open)", isOn: $model.settings.gentleBreeze)
@@ -313,9 +328,10 @@ private struct AboutSettings: View {
                     }
                 }
                 Text("A quiet place to hang screenshots, files, links and notes for a little while.")
+                Button("Check for updates…") { UpdateChecker.shared.check() }
             }
             Section("Privacy") {
-                Text("Everything stays on your Mac. Clothesline has no analytics, no network access and no accounts. Screenshots and files are never uploaded.")
+                Text("Everything stays on your Mac. Clothesline has no analytics, no file uploads; update checks contact GitHub and no accounts. Screenshots and files are never uploaded.")
                     .font(.callout)
             }
             Section("Troubleshooting") {

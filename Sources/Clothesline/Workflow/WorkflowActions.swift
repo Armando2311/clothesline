@@ -25,6 +25,27 @@ final class WorkflowActions: NSObject, NSWindowDelegate {
     }
     func perform(_ action: LineAction, from anchor: NSView? = nil) {
         switch action {
+        case .history:
+            present("Activity History",key:"history",size:CGSize(width:740,height:540)) {
+                ActivityHistoryView(model:model,repeatExport:{ entry in
+                    self.present("Export Again",key:"export",size:CGSize(width:730,height:680)) { RecipeView(model:self.model,items:entry.items,initialOptions:entry.recipeOptions) }
+                })
+            }
+        case .workspace: present("Workspace",key:"workspace",size:CGSize(width:660,height:540)) { WorkspaceView(model:model) }
+        case .rules: present("Collection Rules",key:"rules",size:CGSize(width:720,height:680)) { RulesView(model:model) }
+        case .copyText:
+            let items = model.selectedItems
+            model.notice("Reading selected text…")
+            Task { @MainActor in
+                let text = await model.textForCopy(items)
+                if text.isEmpty { model.notice("No text found in the selected items") }
+                else { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text,forType:.string); model.notice("Copied recognized text") }
+            }
+        case .locate:
+            if let item = model.selectedItems.first, model.availability[item.id] == .missing || model.availability[item.id] == .offline {
+                let panel = NSOpenPanel(); panel.level = WorkflowPresentation.modalLevel
+                if panel.runModal() == .OK, let url = panel.url { model.updateReference(item.id,to:url) }
+            } else { view?.actions.reveal(model.selectedItems) }
         case .settings: SettingsWindowController.shared.show(model: model)
         case .close: if let view { view.delegate?.lineViewRequestsHide(view) }
         case .preview: preview(from: anchor)

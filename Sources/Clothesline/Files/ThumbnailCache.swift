@@ -34,11 +34,13 @@ final class ThumbnailCache {
         if pending[k] != nil { pending[k]?.append(completion); return }
         pending[k] = [completion]
 
+        let cacheKey = k as String
         let request = QLThumbnailGenerator.Request(fileAt: url, size: size, scale: scale, representationTypes: .thumbnail)
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] rep, _ in
             let image = rep?.cgImage
             Task { @MainActor in
                 guard let self else { return }
+                let k = cacheKey as NSString
                 if let image {
                     self.cache.setObject(Box(image), forKey: k, cost: image.bytesPerRow * image.height)
                 }
