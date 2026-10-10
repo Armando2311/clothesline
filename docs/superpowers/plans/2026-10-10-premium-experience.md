@@ -27,6 +27,8 @@
 - [x] Model integration and search: add SearchFilters(kind,source,lineID,period), GroupStore, transient notice, atomic save/recovery preservation, activity hooks and workspace methods. Write regression tests for date filtering, selection reconciliation, duplicate notice and owned-file history relaunch.
 - [x] Native finish: onboarding steps, update release verification/check UI, Reduce Transparency and source context actions. Add release signing/notarization workflow and test validators without external publication.
 - [x] Integration: run complete swift test, XcodeGen/Xcode build, render and inspect representative layouts, live QA in separate state. Resolve all failures and independent review findings. Record actual evidence and remaining external requirements.
-- [ ] Commit and push only new branch, create reviewable PR against main; verify remote main remains at starting SHA.
+- [x] Commit and push only new branch, create reviewable PR against main; verify remote main remains at starting SHA.
 
 Verification: 129 passing tests, 28 passing app self-test checks, successful Xcode Debug build, inspected theme/Compact preview and isolated native workspace/preset/export QA. Distribution credentials remain an external requirement; no notarization or publication was performed.
+
+Published for review: https://github.com/Armando2311/clothesline/pull/3. Remote main verified unchanged at 51bfbef10b886df37912d9b852d40ae89aee3f87 after the feature branch push.
