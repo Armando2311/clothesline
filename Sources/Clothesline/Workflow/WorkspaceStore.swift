@@ -14,10 +14,9 @@ final class WorkspaceStore: ObservableObject {
     init(directory: URL) {
         self.directory = directory
         persistence = WorkspacePersistence(directory: directory)
-        let state: WorkspaceState
-        var loadError: String?
-        do { state = try persistence.load() }
-        catch { state = WorkspaceState(); loadError = "Workspace settings could not be read. The damaged file was preserved. \(error.localizedDescription)" }
+        // A damaged file is quarantined on its own; the readable one is kept.
+        let (state, failure) = persistence.loadRecovering()
+        let loadError = failure.map { "Some workspace data could not be read. The damaged file was preserved. \($0.localizedDescription)" }
         var pruned = state
         let expired = pruned.prune()
         configurations = pruned.configurations; rules = pruned.rules; history = pruned.history; collectedFiles = pruned.collectedFiles

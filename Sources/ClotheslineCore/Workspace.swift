@@ -191,26 +191,53 @@ public final class WorkspacePersistence {
 
     public static let corruptPrefixes = ["workspaces-corrupt-", "history-corrupt-"]
 
+    /// Loads both files. Throws if either was damaged (it has been quarantined);
+    /// use `loadRecovering()` to keep the half that was readable.
     public func load() throws -> WorkspaceState {
+        let (state, failure) = loadRecovering()
+        if let failure { throw failure }
+        return state
+    }
+
+    /// Loads both files independently: a damaged one is quarantined and reported,
+    /// and whatever the other file holds is still returned, so a later save
+    /// never overwrites good settings (or good history) with defaults.
+    public func loadRecovering() -> (state: WorkspaceState, failure: Error?) {
         var state = WorkspaceState()
         var failure: Error?
         if FileManager.default.fileExists(atPath: url.path) {
             do { state = try JSONDecoder().decode(WorkspaceState.self, from: Data(contentsOf: url)); verified.insert(url) }
-            catch { try quarantine(url, prefix: "workspaces-corrupt-"); failure = error }
+            catch { failure = error; quarantine(url, prefix: "workspaces-corrupt-") }
         }
         if FileManager.default.fileExists(atPath: historyURL.path) {
             do {
                 state.history = Array(try JSONDecoder().decode([ActivityEntry].self, from: Data(contentsOf: historyURL)).prefix(WorkspaceState.maximumEntries))
                 verified.insert(historyURL)
-            } catch { try quarantine(historyURL, prefix: "history-corrupt-"); failure = failure ?? error }
+            } catch { failure = failure ?? error; quarantine(historyURL, prefix: "history-corrupt-") }
         }
-        if let failure { throw failure }
-        return state
+        return (state, failure)
     }
 
-    private func quarantine(_ file: URL, prefix: String) throws {
+    /// Moves a damaged file aside and stamps it with the time it was found, which
+    /// anchors the restore-window hold below. If the move fails the file stays
+    /// in place and `verifyReplaceable` refuses to overwrite it.
+    private func quarantine(_ file: URL, prefix: String) {
         let destination = file.deletingLastPathComponent().appendingPathComponent("\(prefix)\(UUID().uuidString).json")
-        try FileManager.default.moveItem(at: file, to: destination)
+        guard (try? FileManager.default.moveItem(at: file, to: destination)) != nil else { return }
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: destination.path)
+    }
+
+    /// True while a damaged workspace or history file was quarantined less than
+    /// one restore window ago. Its removals are unknown, so every unreferenced
+    /// Clothesline-owned copy must be kept until the window has passed.
+    public static func holdsOwnedCopies(in directory: URL, now: Date = Date()) -> Bool {
+        let keys: [URLResourceKey] = [.contentModificationDateKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)) ?? []
+        return files.contains { file in
+            guard corruptPrefixes.contains(where: { file.lastPathComponent.hasPrefix($0) }) else { return false }
+            let found = (try? file.resourceValues(forKeys: Set(keys)))?.contentModificationDate ?? now
+            return now < found.addingTimeInterval(WorkspaceState.retention)
+        }
     }
 
     /// Refuse to replace an unreadable file that quarantine failed to move aside.
@@ -222,17 +249,23 @@ public final class WorkspacePersistence {
 
     public func save(_ state: WorkspaceState, parts: Parts = .all) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var parts = parts
+        // History still only inside an old single-file workspaces.json: write
+        // history.json first, or the settings write below would drop it.
+        if parts.contains(.settings), !state.history.isEmpty, !FileManager.default.fileExists(atPath: historyURL.path) {
+            parts.insert(.history)
+        }
+        if parts.contains(.history) {
+            try verifyReplaceable(historyURL, as: [ActivityEntry].self)
+            try JSONEncoder().encode(state.history).write(to: historyURL, options: .atomic)
+            verified.insert(historyURL)
+        }
         if parts.contains(.settings) {
             try verifyReplaceable(url, as: WorkspaceState.self)
             var settingsOnly = state
             settingsOnly.history = []
             try JSONEncoder().encode(settingsOnly).write(to: url, options: .atomic)
             verified.insert(url)
-        }
-        if parts.contains(.history) {
-            try verifyReplaceable(historyURL, as: [ActivityEntry].self)
-            try JSONEncoder().encode(state.history).write(to: historyURL, options: .atomic)
-            verified.insert(historyURL)
         }
     }
 }

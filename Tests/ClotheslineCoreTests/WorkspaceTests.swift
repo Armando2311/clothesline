@@ -74,6 +74,57 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.url), before)
         XCTAssertTrue(try WorkspacePersistence(directory: directory).load().history.isEmpty)
     }
+    func testSettingsOnlySaveMigratesLegacyHistoryFirst() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var legacy = WorkspaceState()
+        legacy.history = [ActivityEntry(action: .removed, items: [HangingItem(kind: .text, source: .manual, title: "x", lineID: UUID(), text: "x")])]
+        let store = WorkspacePersistence(directory: directory)
+        try JSONEncoder().encode(legacy).write(to: store.url)
+        var state = try store.load()
+        state.rules = [CollectionRule(name: "New", lineID: UUID())]
+        try store.save(state, parts: .settings)
+        XCTAssertEqual(try WorkspacePersistence(directory: directory).load(), state, "a settings edit must not drop history that only lived in workspaces.json")
+    }
+    func testOneDamagedFileKeepsTheOtherHalf() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var state = WorkspaceState()
+        state.rules = [CollectionRule(name: "Keep", lineID: UUID())]
+        state.history = [ActivityEntry(action: .removed, items: [HangingItem(kind: .text, source: .manual, title: "x", lineID: UUID(), text: "x")])]
+        try WorkspacePersistence(directory: directory).save(state)
+        let damagedHistory = WorkspacePersistence(directory: directory)
+        try Data("broken".utf8).write(to: damagedHistory.historyURL)
+        let (loaded, failure) = damagedHistory.loadRecovering()
+        XCTAssertNotNil(failure)
+        XCTAssertEqual(loaded.rules, state.rules)
+        XCTAssertTrue(loaded.history.isEmpty)
+        try damagedHistory.save(loaded)
+        XCTAssertEqual(try WorkspacePersistence(directory: directory).load().rules, state.rules)
+
+        let damagedSettings = WorkspacePersistence(directory: directory)
+        try damagedSettings.save(state)
+        try Data("broken".utf8).write(to: damagedSettings.url)
+        let (recovered, settingsFailure) = WorkspacePersistence(directory: directory).loadRecovering()
+        XCTAssertNotNil(settingsFailure)
+        XCTAssertTrue(recovered.rules.isEmpty)
+        XCTAssertEqual(recovered.history, state.history)
+    }
+    func testDamagedHistoryHoldsOwnedCopiesForOneRestoreWindowFromDiscovery() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = WorkspacePersistence(directory: directory)
+        XCTAssertFalse(WorkspacePersistence.holdsOwnedCopies(in: directory))
+        // Last written long ago: the hold still counts from when it was found.
+        try Data("broken".utf8).write(to: store.historyURL)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90 * 86400)], ofItemAtPath: store.historyURL.path)
+        _ = store.loadRecovering()
+        XCTAssertTrue(WorkspacePersistence.holdsOwnedCopies(in: directory))
+        XCTAssertFalse(WorkspacePersistence.holdsOwnedCopies(in: directory, now: Date().addingTimeInterval(WorkspaceState.retention + 60)))
+    }
     func testWorkspaceArrangementSurvivesPersistence() throws {
         let config = WorkspaceConfiguration(lineID: UUID(), sortOrder: .kind)
         let loaded = try JSONDecoder().decode(WorkspaceConfiguration.self, from: JSONEncoder().encode(config))

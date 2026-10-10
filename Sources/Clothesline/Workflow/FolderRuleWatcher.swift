@@ -19,6 +19,9 @@ final class FolderRuleWatcher {
     private var task: Task<Void,Never>?
     private var stream: FolderEventStream?
     private var watchedPaths: [String] = []
+    /// Sandboxed builds: folders whose security-scoped access is held for as
+    /// long as the stream watches them, so events keep arriving between scans.
+    private var scopedFolders: [URL] = []
     private let followUp = Delayed()
     private var rulesSubscription: AnyCancellable?
     private var started = false
@@ -44,6 +47,7 @@ final class FolderRuleWatcher {
         rulesSubscription = nil
         stream = nil
         watchedPaths = []
+        releaseScopedFolders()
         followUp.cancel()
         task?.cancel(); task = nil
     }
@@ -55,12 +59,21 @@ final class FolderRuleWatcher {
 
     private func rulesChanged() {
         guard started else { return }
-        let paths = Array(Set(activeRules.compactMap { WorkspaceStore.resolve(bookmark: $0.folderBookmark, path: $0.folderPath)?.path })).sorted()
+        let folders = activeRules.compactMap { WorkspaceStore.resolve(bookmark: $0.folderBookmark, path: $0.folderPath) }
+        let paths = Array(Set(folders.map(\.path))).sorted()
         if paths != watchedPaths {
             watchedPaths = paths
+            stream = nil
+            releaseScopedFolders()
+            if FileAccess.isSandboxed { scopedFolders = folders.filter { $0.startAccessingSecurityScopedResource() } }
             stream = paths.isEmpty ? nil : FolderEventStream(paths: paths) { [weak self] in self?.scan() }
         }
         if paths.isEmpty { followUp.cancel() } else { scan() }
+    }
+
+    private func releaseScopedFolders() {
+        scopedFolders.forEach { $0.stopAccessingSecurityScopedResource() }
+        scopedFolders = []
     }
 
     private struct Candidate: Sendable { let url: URL; let rule: CollectionRule; let size: Int64; let modified: Date }

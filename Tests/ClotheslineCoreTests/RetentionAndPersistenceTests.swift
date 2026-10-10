@@ -120,19 +120,6 @@ final class PersistenceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: drop.path))
     }
 
-    func testGarbageCollectionCanProtectRecentCopies() throws {
-        let store = BoardStore(directory: dir)
-        let recent = try store.makeOwnedFileURL(preferredName: "recent.png")
-        let old = try store.makeOwnedFileURL(preferredName: "old.png")
-        try Data([1]).write(to: recent)
-        try Data([1]).write(to: old)
-        let past = Date().addingTimeInterval(-30 * 86400)
-        try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: old.deletingLastPathComponent().path)
-        store.collectGarbage(keeping: Board.makeDefault(), protectingNewerThan: Date().addingTimeInterval(-7 * 86400))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: recent.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
-    }
-
     func testSanitizedFileName() {
         XCTAssertEqual(BoardStore.sanitizedFileName("a/b:c.png"), "a-b-c.png")
         XCTAssertEqual(BoardStore.sanitizedFileName("..hidden"), "hidden")

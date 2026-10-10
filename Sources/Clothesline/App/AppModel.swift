@@ -503,12 +503,11 @@ final class AppModel: ObservableObject {
     private func collectOwnedGarbage() {
         var retained = board
         retained.items.append(contentsOf:activity.retainedItems)
-        // A damaged, quarantined history file may still describe recent removals.
-        // Keep copies young enough to be inside the restore window instead of
-        // stopping cleanup forever; anything older could not be restored anyway.
-        let names = (try? FileManager.default.contentsOfDirectory(atPath:store.directory.path)) ?? []
-        let damaged = names.contains { name in WorkspacePersistence.corruptPrefixes.contains { name.hasPrefix($0) } }
-        store.collectGarbage(keeping:retained, protectingNewerThan: damaged ? Date().addingTimeInterval(-WorkspaceState.retention) : nil)
+        // A history file quarantined within the restore window may describe
+        // removals that can still be restored: keep every copy until it passes.
+        if !WorkspacePersistence.holdsOwnedCopies(in: store.directory) {
+            store.collectGarbage(keeping:retained)
+        }
         pruneRecognizedText()
     }
 
