@@ -16,6 +16,8 @@ struct LineControls: View {
         GeometryReader { geometry in
             controls(compact: AdaptivePanel.compactToolbar(width: geometry.size.width))
         }
+        .premiumAnimation(value: model.selectedIDs.isEmpty)
+        .premiumAnimation(value: model.selectedItems.count == 1 && model.selectedItems.contains { [.image, .screenshot].contains($0.kind) })
         .background { toolbarBackground }
         .background(ControlAnchor { anchor = $0 })
         .onChange(of: searching) { value in focusChanged?(value) }

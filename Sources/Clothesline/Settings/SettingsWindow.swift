@@ -21,7 +21,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        if let window { Motion.present(window) }
     }
 
     func windowWillClose(_ notification: Notification) {

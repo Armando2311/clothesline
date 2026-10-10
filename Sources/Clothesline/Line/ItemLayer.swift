@@ -41,7 +41,7 @@ final class ItemLayer: CALayer {
         selectionLayer.fillColor = nil
         selectionLayer.lineWidth = 2.5
         selectionLayer.lineJoin = .round
-        selectionLayer.isHidden = true
+        selectionLayer.opacity = 0
         selectionLayer.shadowOpacity = 0.9
         selectionLayer.shadowRadius = 5
         selectionLayer.shadowOffset = .zero
@@ -94,14 +94,17 @@ final class ItemLayer: CALayer {
     }
 
     var isSelected: Bool = false {
-        didSet { selectionLayer.isHidden = !isSelected }
+        didSet {
+            guard isSelected != oldValue else { return }
+            Motion.animate(selectionLayer, keyPath: "opacity", to: isSelected ? Float(1) : Float(0), duration: 0.16)
+        }
     }
 
     var isHovered: Bool = false {
         didSet {
             guard isHovered != oldValue, let theme else { return }
-            cardLayer.shadowRadius = isHovered ? 6 : 3.5
-            cardLayer.shadowOpacity = isHovered ? min(1, theme.shadowOpacity + 0.12) : theme.shadowOpacity
+            Motion.animate(cardLayer, keyPath: "shadowRadius", to: isHovered ? 6.0 : 3.5, duration: 0.18)
+            Motion.animate(cardLayer, keyPath: "shadowOpacity", to: isHovered ? min(1, theme.shadowOpacity + 0.12) : theme.shadowOpacity, duration: 0.18)
         }
     }
 

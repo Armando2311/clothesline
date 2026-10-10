@@ -61,6 +61,10 @@ final class LineView: NSView {
     private var geometry = LineGeometry(width: 1200, centerHookX: nil)
     private var layout = LineLayout(geometry: LineGeometry(width: 1200, centerHookX: nil), itemWidth: 100, jitters: [])
     private var orderedIDs: [UUID] = []
+    private var outgoingWorkspace: CALayer?
+    private let workspaceCleanup = Delayed()
+    var workspaceTransitionCount: Int { outgoingWorkspace == nil ? 0 : 1 }
+    private var renderedStatus: String?
     private var renderedLineID: UUID?
     private var renderedCards: [UUID: HangingItem] = [:]
     private var renderedAppearanceStyle: AppearanceStyle = .illustrated
@@ -165,6 +169,8 @@ final class LineView: NSView {
         root.addSublayer(lineNameLayer)
         root.addSublayer(insertionMarker)
         root.addSublayer(dragFeedback)
+        statusLayer.name = "statusFeedback"
+        statusLayer.opacity = 0
         insertionMarker.strokeColor = NSColor.controlAccentColor.cgColor
         insertionMarker.lineWidth = 3
         insertionMarker.lineCap = .round
@@ -230,6 +236,13 @@ final class LineView: NSView {
         let resolved = Theme.resolve(model.settings.theme, appearance: effectiveAppearance)
         let styleChanged = renderedAppearanceStyle != model.settings.appearanceStyle
         guard force || resolved != theme || styleChanged else { updateAmbient(); updateBreeze(); return }
+        if themeApplied && isOnScreen {
+            let dissolve = CATransition()
+            dissolve.type = .fade
+            dissolve.duration = Motion.duration()
+            dissolve.timingFunction = Motion.timing
+            layer?.add(dissolve, forKey: "theme.dissolve")
+        }
         renderedAppearanceStyle = model.settings.appearanceStyle
         themeApplied = true
         theme = resolved
@@ -294,6 +307,14 @@ final class LineView: NSView {
     }
 
     @objc private func accessibilityOptionsChanged() {
+        if Motion.reduced {
+            workspaceCleanup.cancel()
+            outgoingWorkspace?.removeFromSuperlayer()
+            outgoingWorkspace = nil
+            itemsLayer.removeAllAnimations()
+            itemLayers.values.forEach { $0.removeAllAnimations() }
+            relayout(animated: false)
+        }
         applyTheme(force: true)
         updateAmbient()
         updateBreeze()
@@ -334,20 +355,20 @@ final class LineView: NSView {
         let draw = CABasicAnimation(keyPath: "strokeEnd")
         draw.fromValue = 0
         draw.toValue = 1
-        draw.duration = 0.38
+        draw.duration = Motion.duration()
         draw.timingFunction = CAMediaTimingFunction(name: .easeOut)
         ropeBase.add(draw, forKey: "draw")
         ropeTwist.add(draw, forKey: "draw")
         for (i, id) in orderedIDs.enumerated() {
             guard let l = itemLayers[id] else { continue }
-            let delay = 0.06 + min(Double(i), 14) * 0.022
+            let delay = 0.02 + min(Double(i), 6) * 0.012
             let drop = CASpringAnimation(keyPath: "position.y")
             drop.fromValue = l.position.y - 26
             drop.toValue = l.position.y
-            drop.damping = 11
-            drop.stiffness = 260
+            drop.damping = 28
+            drop.stiffness = 320
             drop.mass = 0.8
-            drop.duration = drop.settlingDuration
+            drop.duration = min(0.44, drop.settlingDuration)
             drop.beginTime = CACurrentMediaTime() + delay
             drop.fillMode = .backwards
             l.add(drop, forKey: "appear")
@@ -364,10 +385,15 @@ final class LineView: NSView {
 
     func willDisappear() {
         isOnScreen = false
+        workspaceCleanup.cancel()
+        outgoingWorkspace?.removeFromSuperlayer()
+        outgoingWorkspace = nil
+        itemsLayer.removeAnimation(forKey: "motion.opacity")
+        itemsLayer.removeAnimation(forKey: "motion.transform.translation.x")
         pointerInside = false
         controlsFocused = false
         menuTracking = false
-        setToolbarVisible(false,animated: false)
+        setToolbarVisible(false,animated: true)
         hoveredID = nil
         sky.setAmbientRunning(false)
         itemLayers.values.forEach { $0.removeAnimation(forKey: "breeze") }
@@ -379,7 +405,7 @@ final class LineView: NSView {
         guard !Motion.reduced else { return 0.12 }
         for l in itemLayers.values {
             let lift = CABasicAnimation(keyPath: "position.y")
-            lift.fromValue = l.position.y
+            lift.fromValue = l.presentation()?.position.y ?? l.position.y
             lift.toValue = l.position.y - 14
             lift.duration = 0.16
             lift.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -403,7 +429,8 @@ final class LineView: NSView {
         let a = CABasicAnimation(keyPath: "opacity")
         a.fromValue = visible ? 0 : 1
         a.toValue = visible ? 1 : 0
-        a.duration = 0.15
+        a.duration = Motion.duration()
+        a.timingFunction = Motion.timing
         l.add(a, forKey: "fade")
     }
 
@@ -436,7 +463,8 @@ final class LineView: NSView {
 
     private func boardChanged(filtering: Bool = false) {
         let board = model.board
-        let lineChanged = renderedLineID != board.activeLineID
+        let previousLineID = renderedLineID
+        let lineChanged = previousLineID != board.activeLineID
         renderedLineID = board.activeLineID
         let newIDs = model.ropeItems.map(\.id)
         let oldSet = Set(orderedIDs), newSet = Set(newIDs)
@@ -446,14 +474,52 @@ final class LineView: NSView {
         selection = selection.intersection(newSet)
 
         if lineChanged {
-            // Switching lines: swap everything without per-item theatrics.
-            itemLayers.values.forEach { $0.removeFromSuperlayer() }
+            // Preserve the old cards during the handoff; both collections stay
+            // anchored to the same rope while they crossfade and travel slightly.
+            workspaceCleanup.cancel()
+            outgoingWorkspace?.removeFromSuperlayer()
+            outgoingWorkspace = nil
+            let outgoing = CALayer()
+            outgoing.frame = itemsLayer.bounds
+            outgoing.opacity = itemsLayer.presentation()?.opacity ?? 1
+            outgoing.transform = itemsLayer.presentation()?.transform ?? CATransform3DIdentity
+            for card in itemLayers.values {
+                let current = card.presentation()
+                let position = current?.position ?? card.position
+                let opacity = current?.opacity ?? card.opacity
+                card.removeAllAnimations()
+                card.position = position
+                card.opacity = opacity
+                outgoing.addSublayer(card)
+            }
+            if let hint = hintLayer { outgoing.addSublayer(hint); hintLayer = nil }
+            if isOnScreen, !(outgoing.sublayers ?? []).isEmpty {
+                layer?.insertSublayer(outgoing, above: itemsLayer)
+                outgoingWorkspace = outgoing
+            }
             itemLayers = [:]
+            groupLabels = [:]
             renderedCards = [:]
+            freshLayers = []
             scrollOffset = 0
             for id in newIDs { makeLayer(for: id) }
             relayout(animated: false)
-            if isOnScreen { fadeLayer(itemsLayer, in: true) }
+            updateHint(animated: false)
+            if isOnScreen {
+                let previous = board.lines.firstIndex { $0.id == previousLineID } ?? 0
+                let next = board.lines.firstIndex { $0.id == board.activeLineID } ?? 0
+                let direction: CGFloat = next >= previous ? 1 : -1
+                let travel = Motion.travel() * direction
+                Motion.animate(itemsLayer, keyPath: "opacity", to: Float(1), from: Float(0))
+                Motion.animate(itemsLayer, keyPath: "transform.translation.x", to: 0, from: travel)
+                Motion.animate(outgoing, keyPath: "opacity", to: Float(0))
+                Motion.animate(outgoing, keyPath: "transform.translation.x", to: -travel)
+                workspaceCleanup.schedule(after: Motion.duration()) { [weak self, weak outgoing] in
+                    guard let self, self.outgoingWorkspace === outgoing else { return }
+                    outgoing?.removeFromSuperlayer()
+                    self.outgoingWorkspace = nil
+                }
+            }
             updateBreeze()
             updateLineName()
             updateHint(animated: false)
@@ -466,6 +532,7 @@ final class LineView: NSView {
             renderedCards[id] = nil
             if filtering && isOnScreen {
                 CATransaction.begin()
+                CATransaction.setAnimationDuration(Motion.duration())
                 CATransaction.setCompletionBlock { l.removeFromSuperlayer() }
                 fadeLayer(l, in: false); l.opacity = 0
                 CATransaction.commit()
@@ -473,7 +540,7 @@ final class LineView: NSView {
         }
         for id in added { makeLayer(for: id) }
         for id in newIDs where !added.contains(id) && renderedCards[id] != board.item(id) { updateCard(for: id) }
-        relayout(animated: animate && !filtering)
+        relayout(animated: animate)
         if filtering { for id in added { if let l = itemLayers[id] { fadeLayer(l, in: true) } } }
         if animate && !filtering {
             for id in added where model.recentlyAdded.contains(id) {
@@ -595,9 +662,9 @@ final class LineView: NSView {
                     let move = CASpringAnimation(keyPath: "position")
                     move.fromValue = NSValue(point: from)
                     move.toValue = NSValue(point: newPos)
-                    move.damping = 18
-                    move.stiffness = 240
-                    move.duration = move.settlingDuration
+                    move.damping = 30
+                    move.stiffness = 320
+                    move.duration = min(0.44, move.settlingDuration)
                     l.add(move, forKey: "move")
                     // Moving along the rope makes the item swing a little.
                     swing(l, impulse: CGFloat(max(-0.08, min(0.08, (from.x - newPos.x) / 400))))
@@ -631,13 +698,13 @@ final class LineView: NSView {
     private func animateClipOn(_ l: ItemLayer) {
         // Fall from above, overshoot slightly onto the rope, then settle.
         let drop = CASpringAnimation(keyPath: "position.y")
-        drop.fromValue = l.position.y - 70
+        drop.fromValue = l.position.y - 24
         drop.toValue = l.position.y
-        drop.damping = 10
-        drop.stiffness = 210
+        drop.damping = 28
+        drop.stiffness = 320
         drop.mass = 0.9
-        drop.initialVelocity = 2
-        drop.duration = drop.settlingDuration
+        drop.initialVelocity = 0
+        drop.duration = min(0.44, drop.settlingDuration)
         l.add(drop, forKey: "clipOn")
         let fadeIn = CABasicAnimation(keyPath: "opacity")
         fadeIn.fromValue = 0
@@ -834,7 +901,10 @@ final class LineView: NSView {
         // Topmost (highest zPosition) first.
         for id in orderedIDs.reversed() {
             guard let l = itemLayers[id], l.opacity > 0.01, let root = layer else { continue }
-            let p = root.convert(point, to: l)
+            let p: CGPoint
+            if let visibleRoot = root.presentation(), let visibleItem = l.presentation() {
+                p = visibleRoot.convert(point, to: visibleItem)
+            } else { p = root.convert(point, to: l) }
             if l.containsItemPoint(p) { return id }
         }
         return nil
@@ -843,6 +913,9 @@ final class LineView: NSView {
     /// The item's card rectangle in view coordinates (axis-aligned bounds).
     func rect(for id: UUID) -> CGRect? {
         guard let l = itemLayers[id], let root = layer else { return nil }
+        if let visibleRoot = root.presentation(), let visibleItem = l.presentation() {
+            return visibleRoot.convert(visibleItem.bounds, from: visibleItem)
+        }
         return root.convert(l.bounds, from: l)
     }
 
@@ -1279,8 +1352,14 @@ final class LineView: NSView {
     }
 
     private func updateStatus() {
-        statusLayer.isHidden = model.statusMessage == nil
-        statusLayer.string = model.statusMessage
+        let message = model.statusMessage
+        if message != renderedStatus {
+            let wasVisible = renderedStatus != nil
+            renderedStatus = message
+            statusLayer.isHidden = false
+            Motion.animate(statusLayer, keyPath: "opacity", to: message == nil ? Float(0) : Float(1), from: wasVisible ? nil : Float(0))
+            if message != nil { statusLayer.string = message }
+        }
         statusLayer.fontSize = 12
         statusLayer.alignmentMode = .center
         statusLayer.truncationMode = .end
@@ -1289,7 +1368,7 @@ final class LineView: NSView {
         statusLayer.cornerRadius = 6
         statusLayer.contentsScale = scale
         statusLayer.frame = CGRect(x:12,y:bounds.height-72,width:max(0,bounds.width-24),height:21)
-        statusLayer.actions = ["string":NSNull(),"isHidden":NSNull(),"frame":NSNull()]
+        statusLayer.actions = ["string":NSNull(),"hidden":NSNull(),"position":NSNull(),"bounds":NSNull(),"opacity":NSNull()]
     }
 
     private func layoutGroupLabels() {
@@ -1297,7 +1376,7 @@ final class LineView: NSView {
         groupLabels = [:]
         for id in orderedIDs {
             guard let item = model.board.item(id), let name = model.groupDisplayName(for: item),
-                  let frame = rect(for: id), let card = itemLayers[id], card.opacity > 0.5 else { continue }
+                  rect(for: id) != nil, let card = itemLayers[id], card.opacity > 0.5 else { continue }
             let label = CATextLayer()
             label.string = name
             label.fontSize = 10
@@ -1307,9 +1386,9 @@ final class LineView: NSView {
             label.foregroundColor = NSColor.white.cgColor
             label.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.92).cgColor
             label.cornerRadius = 4
-            label.frame = CGRect(x: frame.minX + 4,y: frame.maxY - 19,width: max(20,frame.width - 8),height: 16)
+            label.frame = CGRect(x: card.cardFrame.minX + 4,y: card.cardFrame.maxY - 19,width: max(20,card.cardFrame.width - 8),height: 16)
             label.zPosition = 950
-            layer?.addSublayer(label)
+            card.addSublayer(label)
             groupLabels[id] = label
         }
     }
@@ -1322,6 +1401,10 @@ final class LineView: NSView {
     }
 
     private func setDropActive(_ active: Bool) {
+        if active != dropActive {
+            dragFeedback.isHidden = false
+            Motion.animate(dragFeedback, keyPath: "opacity", to: active ? Float(1) : Float(0), duration: 0.16, from: active ? Float(0) : nil)
+        }
         dropActive = active
         if !active { destinationLineID = nil; groupTargetID = nil }
         layoutDropFeedback()
@@ -1346,7 +1429,7 @@ final class LineView: NSView {
     private func layoutDropFeedback() {
         destinationLayers.forEach { $0.removeFromSuperlayer() }
         destinationLayers = []
-        dragFeedback.isHidden = !dropActive
+        dragFeedback.isHidden = false
         insertionMarker.path = nil
         guard dropActive else { return }
         let count = max(1, model.board.lines.count)

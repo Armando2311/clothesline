@@ -173,3 +173,7 @@ Choose **No Theme** in Settings → Appearance to float only the rope and files 
 * **Native finish:** guided onboarding, Reduce Motion/Transparency support and an explicit update checker. Developer ID signing and notarization tooling is documented in [Distribution](docs/RELEASING.md).
 
 New items are saved immediately, persistence failures remain visible, and history keeps app-owned copies recoverable across relaunches. Referenced originals are never modified by collection or preparation. Folder watches are nonrecursive and event-driven (FSEvents, only while a folder rule is enabled); activity history keeps the last 7 days, up to 200 entries. Text recognized in images is kept only while the image is on a line. Signing/notarization requires your Apple distribution credentials; update installation remains explicit.
+
+### Smooth workspace handoffs
+
+Workspace switches now crossfade and glide along the rope while the fitted panel eases to its new size. Cards use softer springs, selection and hover feedback interpolate, and theme changes, status messages and workflow windows share restrained motion. Collection, onboarding, editor and export controls animate their layout changes. Reduce Motion uses short fades. See [Motion design](docs/MOTION.md).

@@ -33,7 +33,7 @@ struct WorkspaceView: View {
             }
             if presets.isEmpty { Text("Save a named preset in the export window to reuse it here.").font(.caption).foregroundStyle(.secondary) }
             if let error = activity.error ?? presetError { Text(error).foregroundStyle(.red).font(.caption) }
-        }.padding(22).frame(minWidth: 520, minHeight: 260)
+        }.premiumAnimation(value: model.board.activeLineID).padding(22).frame(minWidth: 520, minHeight: 260)
         .task { do { presets = try ExportPresetStore(directory: activity.directory).load() } catch { presetError = error.localizedDescription } }
     }
     private func chooseFolder() {
@@ -98,7 +98,7 @@ struct RulesView: View {
                 Button("Save Rule") { activity.upsert(draft) }.disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.board.line(draft.lineID) == nil)
             }
             if let error = activity.error { Text(error).foregroundStyle(.red).font(.caption) }
-        }.padding(22).frame(minWidth: 660, minHeight: 550)
+        }.premiumAnimation(value: activity.rules.map(\.id)).premiumAnimation(value: preview).padding(22).frame(minWidth: 660, minHeight: 550)
     }
     private func selectFolder() {
         let panel = NSOpenPanel(); panel.level = WorkflowPresentation.modalLevel; panel.canChooseFiles = false; panel.canChooseDirectories = true
@@ -141,6 +141,6 @@ struct ActivityHistoryView: View {
                 }.padding(.vertical, 4)
             }
             if let error = activity.error { Text(error).foregroundStyle(.red).font(.caption) }
-        }.padding(22).frame(minWidth: 680, minHeight: 460)
+        }.premiumAnimation(value: activity.history.map(\.id)).padding(22).frame(minWidth: 680, minHeight: 460)
     }
 }

@@ -17,7 +17,7 @@ final class WelcomeWindow {
             let action = self?.completion; self?.completion = nil; action?()
         })
         window.center(); self.window = window
-        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true); Motion.present(window)
     }
 }
 private struct WelcomeView: View {
@@ -26,6 +26,7 @@ private struct WelcomeView: View {
     private let titles = ["Collect anything. Send it together.","Prepare once. Reuse every day.","Keep your projects close."]
     var body: some View {
         VStack(alignment: .leading,spacing:18) {
+            VStack(alignment: .leading, spacing: 18) {
             Text(titles[step]).font(.title.bold())
             Text("Step \(step+1) of 3").font(.caption).foregroundStyle(.secondary)
             if step == 0 {
@@ -42,12 +43,15 @@ private struct WelcomeView: View {
                 Label("Optional collection rules route new files into the right line.",systemImage:"line.3.horizontal.decrease.circle")
                 Text("Command–F searches text inside images. More contains workspace, rules and history. Settings controls fitted width, card size and No Theme.")
             }
+            }
+            .id(step)
+            .transition(.opacity)
             Spacer(minLength:0)
             HStack {
                 if step > 0 { Button("Back") { step -= 1 } }
                 Spacer()
                 Button(step == 2 ? "Get Started" : "Next") { if step == 2 { done() } else { step += 1 } }.keyboardShortcut(.defaultAction)
             }
-        }.padding(28).frame(width:500,height:370)
+        }.premiumAnimation(value: step).padding(28).frame(width:500,height:370)
     }
 }
