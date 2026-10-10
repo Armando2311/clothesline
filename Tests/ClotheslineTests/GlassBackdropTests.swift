@@ -18,6 +18,19 @@ final class GlassBackdropTests: XCTestCase {
         defer { controller.hide(); controller.panel.orderOut(nil) }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let content = try XCTUnwrap(controller.panel.contentView)
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
+            // Hosted Macs may enable Reduce Transparency. The accessible fallback
+            // intentionally has no behind-window frosting.
+            XCTAssertTrue(content === controller.lineView)
+            XCTAssertFalse(descendants(content).contains { ($0 as? NSVisualEffectView)?.blendingMode == .behindWindow })
+            controller.lineView.setToolbarVisible(true,animated: false)
+            model.selectedIDs = [note]
+            controller.panel.resignKey()
+            controller.refreshLayout()
+            XCTAssertTrue(controller.panel.contentView === content)
+            XCTAssertTrue(controller.lineView.window === controller.panel)
+            return
+        }
         let backdrop = try XCTUnwrap(descendants(content).compactMap { $0 as? NSVisualEffectView }.first { $0.blendingMode == .behindWindow }, "Glass must blur windows behind the panel, independently of adaptive foreground glass")
         content.updateTrackingAreas()
         XCTAssertTrue(content.trackingAreas.contains { ($0.owner as? NSView) === controller.lineView && $0.options.contains(.mouseEnteredAndExited) }, "The glass wrapper must forward whole-panel hover tracking to the interactive line")
