@@ -94,6 +94,8 @@ final class OCRIndex {
         return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n") ?? ""
     }
 
+    func text(for url:URL) async -> String? { await worker.recognize(url) }
+
     func refresh(_ requested: [(UUID, URL)]) {
         let next = Dictionary(requested, uniquingKeysWith: { _, latest in latest })
         task?.cancel()
@@ -101,8 +103,9 @@ final class OCRIndex {
         let current = generation
         let previous = inputs
         inputs = next
+        let delay = debounceNanoseconds
         task = Task { [weak self, worker] in
-            do { try await Task.sleep(nanoseconds: debounceNanoseconds) } catch { return }
+            do { try await Task.sleep(nanoseconds: delay) } catch { return }
             guard let self, !Task.isCancelled, self.generation == current else { return }
             self.cache = self.cache.filter { next[$0.key] == previous[$0.key] && next[$0.key] != nil }
             self.changed?(self.cache)

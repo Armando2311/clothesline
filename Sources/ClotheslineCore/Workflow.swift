@@ -26,6 +26,11 @@ public enum ExportRecipe: String, Codable, CaseIterable, Sendable {
     }
 }
 
+public enum ExportImageFormat: String, Codable, CaseIterable, Sendable {
+    case png, jpeg
+    public var fileExtension: String { self == .jpeg ? "jpg" : "png" }
+}
+
 public struct RecipeOptions: Codable, Equatable, Sendable {
     public var recipe: ExportRecipe
     public var packageName: String
@@ -37,6 +42,8 @@ public struct RecipeOptions: Codable, Equatable, Sendable {
     public var steps: String = ""
     public var expected: String = ""
     public var actual: String = ""
+    public var imageFormats: [ExportImageFormat] = [.jpeg]
+    public var maximumImageBytes: Int?
     public init(recipe: ExportRecipe) {
         self.recipe = recipe
         packageName = recipe.title
@@ -45,8 +52,27 @@ public struct RecipeOptions: Codable, Equatable, Sendable {
         quality = 0.85
         zip = recipe != .productListing
     }
+    private enum CodingKeys: String, CodingKey {
+        case recipe, packageName, prefix, maxEdge, quality, cropRatio, zip, steps, expected, actual, imageFormats, maximumImageBytes
+    }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(recipe: try values.decode(ExportRecipe.self, forKey: .recipe))
+        packageName = try values.decodeIfPresent(String.self, forKey: .packageName) ?? packageName
+        prefix = try values.decodeIfPresent(String.self, forKey: .prefix) ?? prefix
+        maxEdge = try values.decodeIfPresent(Int.self, forKey: .maxEdge) ?? maxEdge
+        quality = try values.decodeIfPresent(Double.self, forKey: .quality) ?? quality
+        cropRatio = try values.decodeIfPresent(Double.self, forKey: .cropRatio)
+        zip = try values.decodeIfPresent(Bool.self, forKey: .zip) ?? zip
+        steps = try values.decodeIfPresent(String.self, forKey: .steps) ?? ""
+        expected = try values.decodeIfPresent(String.self, forKey: .expected) ?? ""
+        actual = try values.decodeIfPresent(String.self, forKey: .actual) ?? ""
+        imageFormats = try values.decodeIfPresent([ExportImageFormat].self, forKey: .imageFormats) ?? [.jpeg]
+        maximumImageBytes = try values.decodeIfPresent(Int.self, forKey: .maximumImageBytes)
+    }
     public func validate() throws {
-        guard (1...12000).contains(maxEdge), quality.isFinite, (0.05...1).contains(quality),
+        guard !imageFormats.isEmpty, Set(imageFormats).count == imageFormats.count,
+              maximumImageBytes == nil || maximumImageBytes! > 0, (1...12000).contains(maxEdge), quality.isFinite, (0.05...1).contains(quality),
               cropRatio == nil || (cropRatio!.isFinite && cropRatio! > 0 && cropRatio! <= 100),
               !packageName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw WorkflowError.invalidOptions

@@ -14,7 +14,7 @@ they need to go.
   at once if you like.
 * Press **⌃⌥V** to hang whatever is on the clipboard.
 
-Everything stays on your Mac. No accounts, no analytics, no network access.
+Files and recognized text stay on your Mac. No accounts or analytics. The explicit Check for Updates action contacts GitHub.
 
 ## Requirements
 
@@ -51,7 +51,7 @@ open Clothesline.xcodeproj
 ### Tests
 
 ```bash
-swift test   # 42 unit tests for the core logic; also run on Linux in CI
+swift test   # core and native macOS regressions; core also runs on Linux in CI
 ```
 
 CI (`.github/workflows/build.yml`) runs on every push. It runs the core tests on Linux and
@@ -61,7 +61,7 @@ bookmarks), runs `Scripts/e2e-screenshot-test.sh` against the real binary, rende
 with sample items to an image, and builds the XcodeGen project.
 
 `Clothesline --render-preview out.png` draws the real line view with sample content
-(all four themes plus the empty state) without opening a window.
+(all themes, Compact layouts, toolbar and empty state) without opening a window.
 
 ## Workflow tools
 
@@ -115,7 +115,7 @@ and automatic clipboard history are not included.
 * **Moving a file or putting it in the Trash** are separate, clearly labelled menu commands
   that always ask first. Trash can be undone from the Trash.
 * Images dropped from a browser, file promises and pasted images have no original file, so
-  Clothesline keeps its own copy. That copy is discarded when the item leaves the line.
+  Clothesline keeps its own copy. That copy is retained while undo or activity history can restore it, then eligible for cleanup.
 * If a file is deleted the item shows **MISSING** (use *Locate File…*). If its drive is
   unplugged it shows **OFFLINE** and comes back when the drive does.
 
@@ -157,3 +157,18 @@ The toolbar stays hidden until the pointer enters the line, then fades and slide
 Choose **Sakura Morning**, **Ocean Breeze**, **Lavender Twilight**, or **Liquid Glass** under Settings → Appearance → Themes. Liquid Glass uses a persistent native frosted backdrop with a clear glass finish on Xcode 26/macOS 26, and the same frosted foundation on older supported builds. Its active backdrop stays consistent when selecting files, revealing controls or moving focus to another app. Subtle edge lighting and a floating shadow add depth without obscuring the cards. Cards retain contrasting paper backgrounds. Reduce Motion replaces the slide with a simple fade.
 
 Choose **No Theme** in Settings → Appearance to float only the rope and files over the desktop or any app, with no panel backdrop in either Illustrated or Compact mode. The toolbar floats on its own translucent surface.
+
+
+## Premium workflow improvements
+
+* **A fitted line:** automatically sizes to its contents, with full-width and card-size options. No Theme can optionally pass clicks through empty space; optional shake-to-reveal is available in Settings.
+* **Contextual controls:** selection actions appear when useful, less frequent actions live in More, and Pin, Settings and EXIT remain reachable.
+* **Organized dragging:** insertion feedback, batch counts, line drop targets and named collapsible groups. Option-drop creates a group; double-click a collapsed stack to expand it.
+* **Reusable exports:** named presets remember destinations, PNG/JPEG outputs, image dimensions and byte limits. Preview reports encoded output size before ZIP compression; impossible limits block export.
+* **Automatic collections:** source/kind rules route new items; folder rules collect stable writes from the selected folder. Preview a rule before enabling it, and pause it anytime.
+* **Project workspaces:** each line remembers its project context, destination, export preset and sort order. Open Workspace from More.
+* **Focused search:** filter by kind, source, line and date; matching text is highlighted in the collection browser. Copy recognized image text directly or locate an unavailable file.
+* **Recovery and activity:** additions, removals and exports are recorded locally. Restore removed items, reveal export results, or run an export again from More → Activity history.
+* **Native finish:** guided onboarding, Reduce Motion/Transparency support and an explicit update checker. Developer ID signing and notarization tooling is documented in [Distribution](docs/RELEASING.md).
+
+New items are saved immediately, persistence failures remain visible, and history keeps app-owned copies recoverable across relaunches. Referenced originals are never modified by collection or preparation. Folder watches are nonrecursive; activity history keeps the latest 200 entries. Signing/notarization requires your Apple distribution credentials; update installation remains explicit.

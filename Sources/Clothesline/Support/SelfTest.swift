@@ -99,7 +99,7 @@ enum SelfTest {
             check(out.string(forType: .URL) == "https://example.com/page", "dragging a link out provides public.url")
         }
 
-        // 6. Removing never touches referenced files; owned copies wait for undo.
+        // 6. Removing never touches originals; history retains owned copies.
         if let item, let imageItem {
             model.remove([item.id, imageItem.id])
             check(fm.fileExists(atPath: original.path), "removing a referenced item leaves the file")
@@ -107,7 +107,12 @@ enum SelfTest {
             model.undoLastRemoval()
             check(model.board.item(item.id) != nil && model.board.item(imageItem.id) != nil, "undo restores removed items")
             model.remove([imageItem.id], undoable: false)
-            check(!fm.fileExists(atPath: imageItem.file!.path), "owned copy deleted once removal is final")
+            check(fm.fileExists(atPath: imageItem.file!.path), "owned copy retained for persistent history after final removal")
+            if let entry = model.activity.history.first(where: { $0.action == .removed && $0.items.contains(where: { $0.id == imageItem.id }) }) {
+                model.restoreActivity(entry)
+                check(model.board.item(imageItem.id) != nil,"history restores an owned copy after final removal")
+                model.remove([imageItem.id],undoable:false)
+            }
         }
 
         // 7. Bookmarks follow a rename; deletion is detected as missing.

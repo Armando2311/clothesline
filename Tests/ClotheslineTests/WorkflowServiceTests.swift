@@ -166,3 +166,31 @@ extension WorkflowServiceTests {
         XCTAssertEqual(DragPolicy.operation(items: [owned],context: .outsideApplication,modifiers: [.command]),.copy)
     }
 }
+
+extension WorkflowServiceTests {
+    func testMultipleFormatsPreviewMatchesFilesAndBytes() throws {
+        let root = try temporary(), source = root.appendingPathComponent("original.png")
+        let original = try ImageProcessor.encode(fixture(), format: .png, quality: 1)
+        try original.write(to: source)
+        let input = ExportInput(item: HangingItem(kind: .image, source: .drop, title: "Image", lineID: UUID()), url: source)
+        var options = RecipeOptions(recipe: .productListing)
+        options.imageFormats = [.png, .jpeg]; options.maximumImageBytes = 5000
+        XCTAssertEqual(ExportService.plannedNames(inputs: [input], options: options), ["product-001.png", "product-001.jpg"])
+        let preview = try ExportService.estimate(inputs: [input], options: options)
+        let result = try ExportService.export(inputs: [input], options: options, destination: root)
+        for output in preview.outputs {
+            XCTAssertEqual(try Data(contentsOf: result.url.appendingPathComponent(output.name)).count, output.bytes)
+            XCTAssertLessThanOrEqual(output.bytes, 5000)
+        }
+        XCTAssertEqual(try Data(contentsOf: source), original)
+    }
+    func testRecipeHardLimitLeavesNoPartialPackage() throws {
+        let root = try temporary(), source = root.appendingPathComponent("original.png")
+        try ImageProcessor.encode(fixture(), format: .png, quality: 1).write(to: source)
+        let input = ExportInput(item: HangingItem(kind: .image, source: .drop, title: "Image", lineID: UUID()), url: source)
+        var options = RecipeOptions(recipe: .productListing)
+        options.imageFormats = [.png]; options.maximumImageBytes = 1
+        XCTAssertThrowsError(try ExportService.export(inputs: [input], options: options, destination: root))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["original.png"])
+    }
+}

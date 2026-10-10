@@ -28,10 +28,17 @@ final class AppModel: ObservableObject {
     }
     @Published var selectedIDs: Set<UUID> = []
     @Published private(set) var recognizedText: [UUID: String] = [:]
+    @Published var searchFilters = SearchFilters() { didSet { reconcileSelection(); refreshOCR() } }
+    @Published private(set) var statusMessage: String?
+    @Published private(set) var groups: [ItemGroup] = []
+    @Published var collapsedGroupIDs:Set<UUID> = []
+    let activity: WorkspaceStore
+    private let noticeExpiry = Delayed()
+    private var persistenceError:String?
     private let ocr: OCRIndex
     private var ocrInputsTask: Task<Void, Never>?
-    var isSearching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var visibleItems: [HangingItem] { ItemSearch.results(board: board, query: query, recognizedText: recognizedText) }
+    var isSearching: Bool { searchFilters.isActive || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var visibleItems: [HangingItem] { searchFilters.results(board: board, query: query, recognizedText: recognizedText) }
     var selectedItems: [HangingItem] { visibleItems.filter { selectedIDs.contains($0.id) } }
     private func reconcileSelection() { selectedIDs.formIntersection(Set(visibleItems.map(\.id))) }
     func refreshOCR() {
@@ -84,6 +91,7 @@ final class AppModel: ObservableObject {
     init(store: BoardStore = BoardStore(directory: BoardStore.defaultDirectory()), ocrIndex: OCRIndex? = nil) {
         self.ocr = ocrIndex ?? OCRIndex(debounceNanoseconds: 0)
         self.store = store
+        self.activity = WorkspaceStore(directory: store.directory)
         switch store.load() {
         case .loaded(let b), .fresh(let b):
             board = b
@@ -101,7 +109,13 @@ final class AppModel: ObservableObject {
             self?.recognizedText = text
             self?.reconcileSelection()
         }
-        store.collectGarbage(keeping: board)
+        let groupURL = store.directory.appendingPathComponent("groups.json")
+        if let data = try? Data(contentsOf: groupURL) {
+            do { groups = try JSONDecoder().decode([ItemGroup].self,from:data) }
+            catch { try? FileManager.default.moveItem(at:groupURL,to:store.directory.appendingPathComponent("groups.corrupt-\(UUID().uuidString).json")) }
+        }
+        collapsedGroupIDs = Set(groups.map(\.id))
+        collectOwnedGarbage()
         applyRetention()
     }
 
@@ -120,7 +134,7 @@ final class AppModel: ObservableObject {
         board = copy
         reconcileSelection()
         refreshOCR()
-        scheduleSave()
+        saveNow()
         scheduleExpiryCheck()
     }
 
@@ -130,7 +144,8 @@ final class AppModel: ObservableObject {
 
     func saveNow() {
         saveDebounce.cancel()
-        do { try store.save(board) } catch { Log.error("Saving failed: \(error.localizedDescription)") }
+        do { try store.save(board); persistenceError = nil }
+        catch { persistenceError = "Could not save your collection: \(error.localizedDescription)"; notice(persistenceError!); Log.error("Saving failed: \(error.localizedDescription)") }
     }
 
     /// Called at quit: applies quit-time cleanup, deletes owned copies whose
@@ -145,6 +160,7 @@ final class AppModel: ObservableObject {
             }
         }
         flushUndo()
+        collectOwnedGarbage()
         saveNow()
     }
 
@@ -152,7 +168,10 @@ final class AppModel: ObservableObject {
 
     var activeItems: [HangingItem] { board.activeItems }
 
-    func activate(lineID: UUID) { mutate { $0.activate(lineID: lineID) } }
+    func activate(lineID: UUID) {
+        mutate { $0.activate(lineID: lineID) }
+        if let order = workspaceForActiveLine?.sortOrder { sortActiveLine(by:order) }
+    }
 
     @discardableResult
     func addLine(named name: String, expiryHours: Double? = nil) -> Line {
@@ -184,7 +203,6 @@ final class AppModel: ObservableObject {
     /// Hangs files by reference. The originals are never moved or copied.
     @discardableResult
     func hang(fileURLs: [URL], source: ItemSource, lineID: UUID? = nil, at position: Int? = nil, ownership: FileOwnership = .referenced) -> [UUID] {
-        let line = targetLine(lineID)
         var added: [UUID] = []
         mutate { board in
             var pos = position
@@ -194,7 +212,7 @@ final class AppModel: ObservableObject {
                 if source == .screenshot { kind = .screenshot }
                 let reference = files.makeReference(for: url, ownership: ownership)
                 let item = HangingItem(kind: kind, source: source, title: ItemClassifier.title(forFileName: url.lastPathComponent, kind: kind),
-                                       lineID: line, file: reference)
+                                       lineID: routedLine(url:url,source:source,kind:kind,explicit:lineID), file: reference)
                 switch board.add(item, atLinePosition: pos) {
                 case .added(let i):
                     added.append(i.id)
@@ -206,6 +224,9 @@ final class AppModel: ObservableObject {
             }
         }
         recentlyAdded = Set(added)
+        activity.recordAdded(board.items.filter { added.contains($0.id) })
+        let duplicateCount = fileURLs.count - added.count
+        notice(added.isEmpty ? "Already collected" : "Added \(added.count) item\(added.count == 1 ? "" : "s")\(duplicateCount > 0 ? " · \(duplicateCount) already collected" : "")")
         return added
     }
 
@@ -216,13 +237,13 @@ final class AppModel: ObservableObject {
         if let link = ItemClassifier.link(from: trimmed) {
             return hang(link: link, source: source, lineID: lineID, at: position)
         }
-        let item = HangingItem(kind: .text, source: source, title: ItemClassifier.title(forText: trimmed), lineID: targetLine(lineID), text: trimmed)
+        let item = HangingItem(kind: .text, source: source, title: ItemClassifier.title(forText: trimmed), lineID: routedLine(url:nil,source:source,kind:.text,explicit:lineID), text: trimmed)
         return add(item, at: position)
     }
 
     @discardableResult
     func hang(link: String, title: String? = nil, source: ItemSource, lineID: UUID? = nil, at position: Int? = nil) -> UUID? {
-        let item = HangingItem(kind: .link, source: source, title: title ?? ItemClassifier.title(forLink: link), lineID: targetLine(lineID), link: link)
+        let item = HangingItem(kind: .link, source: source, title: title ?? ItemClassifier.title(forLink: link), lineID: routedLine(url:nil,source:source,kind:.link,explicit:lineID), link: link)
         return add(item, at: position)
     }
 
@@ -238,6 +259,7 @@ final class AppModel: ObservableObject {
             try imageData.write(to: url, options: .atomic)
             return hang(fileURLs: [url], source: source, lineID: lineID, at: position, ownership: .owned).first
         } catch {
+            notice("Could not save image: \(error.localizedDescription)")
             Log.error("Could not save image: \(error.localizedDescription)")
             return nil
         }
@@ -249,6 +271,8 @@ final class AppModel: ObservableObject {
             if case .added(let i) = board.add(item, atLinePosition: position) { result = i.id }
         }
         recentlyAdded = result.map { [$0] } ?? []
+        if let result, let added = board.item(result) { activity.recordAdded([added]); notice("Added \(added.kind.displayName.lowercased())") }
+        else { notice("Already collected") }
         return result
     }
 
@@ -273,8 +297,10 @@ final class AppModel: ObservableObject {
             entries.append((item, pos))
         }
         guard !entries.isEmpty else { return }
+        activity.recordRemoved(entries.map { $0.0 })
         lastRemovalStyle = style
         mutate { _ = $0.remove(ids) }
+        notice("Removed \(entries.count) item\(entries.count == 1 ? "" : "s") · available in History")
         recentlyAdded = []
         for (item, _) in entries { if let f = item.file { files.stopAccessing(path: f.path) } }
         let batch = RemovedBatch(entries: entries.sorted { $0.1 < $1.1 })
@@ -311,7 +337,7 @@ final class AppModel: ObservableObject {
         for (item, _) in batch.entries {
             guard let file = item.file, file.ownership == .owned else { continue }
             // Another line might still hang the same owned copy.
-            if board.items.contains(where: { $0.file?.path == file.path }) { continue }
+            if board.items.contains(where: { $0.file?.path == file.path }) || activity.retainedItems.contains(where: { $0.file?.path == file.path }) { continue }
             store.deleteOwnedFile(file)
         }
     }
@@ -414,4 +440,118 @@ final class AppModel: ObservableObject {
         }
         expiryTimer.schedule(after: next.timeIntervalSinceNow + 1) { [weak self] in self?.applyRetention() }
     }
+    func notice(_ message: String) {
+        statusMessage = persistenceError ?? message
+        noticeExpiry.schedule(after:4) { [weak self] in
+            guard let self else { return }; self.statusMessage = self.persistenceError
+        }
+    }
+    private func routedLine(url:URL?,source:ItemSource,kind:ItemKind,explicit:UUID?) -> UUID {
+        if let explicit { return targetLine(explicit) }
+        return activity.destination(for:url,source:source,kind:kind,defaultLineID:board.activeLineID,validLineIDs:Set(board.lines.map(\.id)))
+    }
+    var workspaceForActiveLine: WorkspaceConfiguration? { activity.config(for:board.activeLineID) }
+    func setWorkspaceDestination(_ url:URL) {
+        var config = workspaceForActiveLine ?? WorkspaceConfiguration(lineID:board.activeLineID)
+        config.destinationPath = url.path
+        config.destinationBookmark = WorkspaceStore.bookmark(for:url)
+        activity.update(config)
+    }
+    func setWorkspacePreset(_ id:UUID?) {
+        var config = workspaceForActiveLine ?? WorkspaceConfiguration(lineID:board.activeLineID)
+        config.exportPresetID = id; activity.update(config)
+    }
+    func restoreActivity(_ entry:ActivityEntry) {
+        query = ""; searchFilters = SearchFilters()
+        var restored:[UUID] = []
+        mutate { board in
+            for var item in entry.items {
+                if let file = item.file, file.ownership == .owned, !FileManager.default.fileExists(atPath:file.path) { continue }
+                if board.item(item.id) != nil { restored.append(item.id); continue }
+                if board.line(item.lineID) == nil { item.lineID = board.activeLineID }
+                if case .added = board.add(item) { restored.append(item.id) }
+            }
+            if let id = restored.first, let item = board.item(id) { board.activate(lineID:item.lineID) }
+        }
+        recentlyAdded = Set(restored); selectedIDs = Set(restored); reconcileSelection(); revalidate(ids:Set(restored))
+        notice(restored.isEmpty ? "No recoverable items — original files may be unavailable" : "Restored \(restored.count) items to the line")
+    }
+    func groupItems(_ ids:Set<UUID>,named name:String) {
+        let members = Set(board.activeItems.filter { ids.contains($0.id) }.map(\.id))
+        guard members.count > 1 else { return }
+        ungroupItems(members)
+        let title = name.trimmingCharacters(in:.whitespacesAndNewlines)
+        let firstPosition = board.activeItems.firstIndex { members.contains($0.id) } ?? 0
+        mutate { $0.move(members,toLinePosition:firstPosition,lineID:$0.activeLineID) }
+        groups.append(ItemGroup(name:title.isEmpty ? "Group" : title,lineID:board.activeLineID,itemIDs:members))
+        collapsedGroupIDs = Set(groups.map(\.id))
+        saveGroups(); notice("Grouped \(members.count) items")
+    }
+    func ungroupItems(_ ids:Set<UUID>) {
+        groups = groups.compactMap { value in
+            var group = value; group.itemIDs.subtract(ids); return group.itemIDs.count > 1 ? group : nil
+        }; saveGroups()
+    }
+    func groupName(for item:HangingItem) -> String? { groups.first { $0.lineID == item.lineID && $0.itemIDs.contains(item.id) }?.name }
+    private func saveGroups() {
+        do { try FileManager.default.createDirectory(at:store.directory,withIntermediateDirectories:true); try JSONEncoder().encode(groups).write(to:store.directory.appendingPathComponent("groups.json"),options:.atomic) }
+        catch { notice("Could not save groups: \(error.localizedDescription)") }
+    }
+    private func collectOwnedGarbage() {
+        // A quarantined history file may still describe removed owned copies.
+        // Preserve those copies until recovery has been resolved explicitly.
+        let names = (try? FileManager.default.contentsOfDirectory(atPath:store.directory.path)) ?? []
+        guard !names.contains(where:{ $0.hasPrefix("workspaces-corrupt-") }) else { return }
+        var retained = board
+        retained.items.append(contentsOf:activity.retainedItems)
+        store.collectGarbage(keeping:retained)
+    }
+
+    func textForCopy(_ items:[HangingItem]) async -> String {
+        var values:[String] = []
+        for item in items {
+            if let text = item.text { values.append(text); continue }
+            guard [.image,.screenshot].contains(item.kind),let reference = item.file else { continue }
+            let files = self.files
+            let resolved = await Task.detached(priority:.utility) { files.resolve(reference).url }.value
+            if let resolved,let text = await ocr.text(for:resolved),!text.isEmpty { recognizedText[item.id] = text; values.append(text) }
+        }
+        return values.joined(separator:"\n\n")
+    }
+
+    var ropeItems:[HangingItem] {
+        let items = visibleItems
+        guard !isSearching else { return items }
+        var seen:Set<UUID> = []
+        return items.filter { item in
+            guard let group = groups.first(where:{ $0.lineID == item.lineID && $0.itemIDs.contains(item.id) }),collapsedGroupIDs.contains(group.id) else { return true }
+            return seen.insert(group.id).inserted
+        }
+    }
+    func expandGroup(for item:HangingItem) -> Bool {
+        guard let group = groups.first(where:{ $0.lineID == item.lineID && $0.itemIDs.contains(item.id) }),collapsedGroupIDs.contains(group.id) else { return false }
+        collapsedGroupIDs.remove(group.id); return true
+    }
+    func groupDisplayName(for item:HangingItem) -> String? {
+        guard let group = groups.first(where:{ $0.lineID == item.lineID && $0.itemIDs.contains(item.id) }) else { return nil }
+        let count = board.items.filter { group.itemIDs.contains($0.id) && $0.lineID == group.lineID }.count
+        return collapsedGroupIDs.contains(group.id) ? "\(group.name) · \(count) items" : group.name
+    }
+
+    func linePosition(forVisibleInsertion index:Int,movingIDs:Set<UUID> = []) -> Int {
+        let remaining = board.activeItems.filter { !movingIDs.contains($0.id) }
+        let following = ropeItems.dropFirst(max(0,index)).first { !movingIDs.contains($0.id) }
+        guard let following else { return remaining.count }
+        return remaining.firstIndex { $0.id == following.id } ?? remaining.count
+    }
+    func dragItems(for ids:Set<UUID>) -> [HangingItem] {
+        var all = ids
+        for group in groups where collapsedGroupIDs.contains(group.id) && !group.itemIDs.isDisjoint(with:ids) { all.formUnion(group.itemIDs) }
+        return visibleItems.filter { all.contains($0.id) }
+    }
+    func dragRepresentativeID(for item:HangingItem) -> UUID {
+        guard let group = groups.first(where:{ $0.lineID == item.lineID && $0.itemIDs.contains(item.id) }),collapsedGroupIDs.contains(group.id) else { return item.id }
+        return ropeItems.first { group.itemIDs.contains($0.id) }?.id ?? item.id
+    }
+
 }
